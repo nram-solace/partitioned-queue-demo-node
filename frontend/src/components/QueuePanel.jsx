@@ -1,54 +1,45 @@
 import ConsumerTile from './ConsumerTile'
 
 function QueuePanel({ title, description, consumers, queueType, partitionState, queueState, onDisconnect, onReconnect }) {
+  // Calculate consumer counts
+  const connectedConsumers = consumers.filter(c =>
+    c.status === 'connected' || c.status === 'active' || c.status === 'standby'
+  ).length
+  const totalConsumers = consumers.length
+
   // Format state for display
   const getStateDisplay = () => {
     let currentState = null
 
     if (queueType === 'partitioned') {
-      // Show both partition state (balanced/rebalancing) and operational state (operational/degraded/down)
+      // Show both partition state (balanced/rebalancing) and health state (healthy/degraded/down)
       const partitionStateMap = {
         'balanced': { text: 'BALANCED', color: 'text-green-400' },
         'rebalancing': { text: 'REBALANCING', color: 'text-yellow-400' },
         'unknown': { text: 'UNKNOWN', color: 'text-gray-400' }
       }
-      const operationalStateMap = {
-        'operational': { text: 'OPERATIONAL', color: 'text-green-400' },
+      const healthStateMap = {
+        'healthy': { text: 'HEALTHY', color: 'text-green-400' },
         'degraded': { text: 'DEGRADED', color: 'text-yellow-400' },
         'down': { text: 'DOWN', color: 'text-red-500' },
         'unknown': { text: 'UNKNOWN', color: 'text-gray-400' }
       }
 
       const pState = partitionStateMap[partitionState] || partitionStateMap.unknown
-      const oState = operationalStateMap[queueState] || operationalStateMap.unknown
+      const hState = healthStateMap[queueState] || healthStateMap.unknown
 
       return (
         <span className="ml-2 font-semibold">
-          <span className={oState.color}>[{oState.text}]</span>
+          <span className={hState.color}>[{hState.text}]</span>
           <span className="mx-1">·</span>
           <span className={pState.color}>[{pState.text}]</span>
         </span>
       )
-    } else if (queueType === 'non-exclusive') {
+    } else if (queueType === 'non-exclusive' || queueType === 'exclusive') {
       currentState = queueState
       const stateMap = {
-        'operational': { text: 'OPERATIONAL', color: 'text-green-400' },
+        'healthy': { text: 'HEALTHY', color: 'text-green-400' },
         'degraded': { text: 'DEGRADED', color: 'text-yellow-400' },
-        'down': { text: 'DOWN', color: 'text-red-500' },
-        'unknown': { text: 'UNKNOWN', color: 'text-gray-400' }
-      }
-      const state = stateMap[currentState] || stateMap.unknown
-      return (
-        <span className={`ml-2 ${state.color} font-semibold`}>
-          [{state.text}]
-        </span>
-      )
-    } else if (queueType === 'exclusive') {
-      currentState = queueState
-      // Exclusive queues only show OPERATIONAL or DOWN (never DEGRADED)
-      // because one active consumer = full capacity regardless of standby count
-      const stateMap = {
-        'operational': { text: 'OPERATIONAL', color: 'text-green-400' },
         'down': { text: 'DOWN', color: 'text-red-500' },
         'unknown': { text: 'UNKNOWN', color: 'text-gray-400' }
       }
@@ -70,7 +61,9 @@ function QueuePanel({ title, description, consumers, queueType, partitionState, 
           {title}
           {getStateDisplay()}
         </h2>
-        <p className="text-sm text-slate-400">{description}</p>
+        <p className="text-sm text-slate-400">
+          {description} : {connectedConsumers} / {totalConsumers} consumers up.
+        </p>
       </div>
 
       <div className="grid grid-cols-5 gap-4 p-6">

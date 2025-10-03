@@ -14,9 +14,9 @@ class ConsumerManager {
     this.wsServer = null;
     this.clients = new Set();
     this.partitionState = 'unknown'; // States: unknown, balanced, rebalancing
-    this.partitionedState = 'unknown'; // States: unknown, operational, degraded, down
-    this.nonExclusiveState = 'unknown'; // States: unknown, operational, degraded, down
-    this.exclusiveState = 'unknown'; // States: unknown, operational, degraded, down
+    this.partitionedState = 'unknown'; // States: unknown, healthy, degraded, down
+    this.nonExclusiveState = 'unknown'; // States: unknown, healthy, degraded, down
+    this.exclusiveState = 'unknown'; // States: unknown, healthy, degraded, down
     this.lastPartitionCheck = null;
     this.rebalanceDetectionTimer = null;
   }
@@ -143,8 +143,8 @@ class ConsumerManager {
       // All consumers down - queue cannot process messages
       newState = 'down';
     } else if (connectedConsumers.length === partitionedConsumers.length) {
-      // All consumers operational
-      newState = 'operational';
+      // All consumers up
+      newState = 'healthy';
     } else {
       // Some consumers down, but at least one operational
       newState = 'degraded';
@@ -173,8 +173,8 @@ class ConsumerManager {
       // All consumers down - queue cannot process messages
       newState = 'down';
     } else if (connectedConsumers.length === nonExclusiveConsumers.length) {
-      // All consumers operational
-      newState = 'operational';
+      // All consumers up
+      newState = 'healthy';
     } else {
       // Some consumers down, but at least one operational
       newState = 'degraded';
@@ -202,11 +202,13 @@ class ConsumerManager {
     if (connectedConsumers.length === 0) {
       // All consumers down - queue cannot process messages
       newState = 'down';
+    } else if (connectedConsumers.length === exclusiveConsumers.length) {
+      // All consumers up - full HA redundancy
+      newState = 'healthy';
     } else {
-      // At least one consumer connected - queue is operational
-      // Note: Exclusive queues always process at full capacity (one active consumer)
-      // regardless of how many standby consumers are available
-      newState = 'operational';
+      // Some consumers down - reduced redundancy but still processing
+      // Note: Processing capacity unaffected (one active consumer = full throughput)
+      newState = 'degraded';
     }
 
     if (newState !== this.exclusiveState) {
