@@ -29,11 +29,26 @@ function QueuePanel({ title, description, consumers, queueType, partitionState, 
           <span className={pState.color}>[{pState.text}]</span>
         </span>
       )
-    } else if (queueType === 'non-exclusive' || queueType === 'exclusive') {
+    } else if (queueType === 'non-exclusive') {
       currentState = queueState
       const stateMap = {
         'operational': { text: 'OPERATIONAL', color: 'text-green-400' },
         'degraded': { text: 'DEGRADED', color: 'text-yellow-400' },
+        'down': { text: 'DOWN', color: 'text-red-500' },
+        'unknown': { text: 'UNKNOWN', color: 'text-gray-400' }
+      }
+      const state = stateMap[currentState] || stateMap.unknown
+      return (
+        <span className={`ml-2 ${state.color} font-semibold`}>
+          [{state.text}]
+        </span>
+      )
+    } else if (queueType === 'exclusive') {
+      currentState = queueState
+      // Exclusive queues only show OPERATIONAL or DOWN (never DEGRADED)
+      // because one active consumer = full capacity regardless of standby count
+      const stateMap = {
+        'operational': { text: 'OPERATIONAL', color: 'text-green-400' },
         'down': { text: 'DOWN', color: 'text-red-500' },
         'unknown': { text: 'UNKNOWN', color: 'text-gray-400' }
       }

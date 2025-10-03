@@ -202,12 +202,11 @@ class ConsumerManager {
     if (connectedConsumers.length === 0) {
       // All consumers down - queue cannot process messages
       newState = 'down';
-    } else if (connectedConsumers.length === exclusiveConsumers.length) {
-      // All consumers operational - full HA capability
-      newState = 'operational';
     } else {
-      // Some consumers down - high availability compromised
-      newState = 'degraded';
+      // At least one consumer connected - queue is operational
+      // Note: Exclusive queues always process at full capacity (one active consumer)
+      // regardless of how many standby consumers are available
+      newState = 'operational';
     }
 
     if (newState !== this.exclusiveState) {
