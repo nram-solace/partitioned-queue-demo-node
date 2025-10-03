@@ -1,0 +1,20 @@
+{
+  "name": "stock-order-processing-demo",
+  "version": "1.0.0",
+  "description": "Solace PubSub+ Queue Types Demo - Stock Order Processing",
+  "scripts": {
+    "publisher": "node backend/publisher.js",
+    "consumer": "node backend/consumer.js",
+    "dev": "concurrently \"npm run publisher\" \"npm run frontend\"",
+    "frontend": "cd frontend && npm run dev",
+    "install-all": "npm install && cd frontend && npm install"
+  },
+  "dependencies": {
+    "solclientjs": "^10.18.2",
+    "dotenv": "^16.4.5",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}
