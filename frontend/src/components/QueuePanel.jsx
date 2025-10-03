@@ -57,13 +57,15 @@ function QueuePanel({ title, description, consumers, queueType, partitionState, 
   return (
     <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-hidden">
       <div className="bg-slate-750 px-6 py-4 border-b border-slate-700">
-        <h2 className="text-xl font-bold mb-1">
-          {title}
-          {getStateDisplay()}
+        <h2 className="text-xl font-bold flex items-center justify-between">
+          <span>
+            {title}
+            {getStateDisplay()}
+          </span>
+          <span className="text-sm font-normal text-slate-300">
+            {connectedConsumers} / {totalConsumers} consumers up.
+          </span>
         </h2>
-        <p className="text-sm text-slate-400">
-          {description} : {connectedConsumers} / {totalConsumers} consumers up.
-        </p>
       </div>
 
       <div className="grid grid-cols-5 gap-4 p-6">
