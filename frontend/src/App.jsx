@@ -40,6 +40,7 @@ function App() {
 
   const [wsConnected, setWsConnected] = useState(false)
   const [reconnectAttempt, setReconnectAttempt] = useState(0)
+  const [partitionState, setPartitionState] = useState('unknown')
 
   useEffect(() => {
     let ws = null
@@ -65,6 +66,12 @@ function App() {
         } else if (data.type === 'state') {
           // Initial state sync
           updateConsumersFromState(data.consumers)
+          if (data.partitionState) {
+            setPartitionState(data.partitionState)
+          }
+        } else if (data.type === 'partitionState') {
+          // Partition state update
+          setPartitionState(data.state)
         }
       }
 
@@ -190,6 +197,7 @@ function App() {
           description="Symbol-based routing - Each consumer handles specific stocks"
           consumers={consumers.partitioned}
           queueType="partitioned"
+          partitionState={partitionState}
           onDisconnect={handleDisconnect}
           onReconnect={handleReconnect}
         />

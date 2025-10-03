@@ -13,6 +13,9 @@ class ConsumerManager {
     this.consumers = [];
     this.wsServer = null;
     this.clients = new Set();
+    this.partitionState = 'unknown'; // States: unknown, balanced, rebalancing
+    this.lastPartitionCheck = null;
+    this.rebalanceDetectionTimer = null;
   }
 
   startWebSocketServer(port = 8080) {
@@ -68,7 +71,8 @@ class ConsumerManager {
         messagesProcessed: c.messagesProcessed,
         lastOrders: c.lastOrders,
         assignedSymbol: c.assignedSymbol
-      }))
+      })),
+      partitionState: this.partitionState
     };
 
     if (client.readyState === WebSocket.OPEN) {
@@ -96,6 +100,100 @@ class ConsumerManager {
     }
   }
 
+  checkPartitionState() {
+    const partitionedConsumers = this.consumers.filter(c => c.queueType === 'partitioned');
+
+    const activeConsumers = partitionedConsumers.filter(c => c.status === 'active');
+    const connectedConsumers = partitionedConsumers.filter(c => c.status === 'connected' || c.status === 'active');
+    const assignedConsumers = partitionedConsumers.filter(c => c.assignedSymbol !== null);
+    const downConsumers = partitionedConsumers.filter(c => c.status === 'down' || c.status === 'offline');
+
+    // Debug logging
+    console.log(`📊 Partition State Check:
+      Total: ${partitionedConsumers.length}
+      Active: ${activeConsumers.length} (${activeConsumers.map(c => c.consumerNumber).join(',')})
+      Connected: ${connectedConsumers.length} (${connectedConsumers.map(c => c.consumerNumber).join(',')})
+      Down: ${downConsumers.length} (${downConsumers.map(c => c.consumerNumber).join(',')})
+      Assigned: ${assignedConsumers.length} (${assignedConsumers.map(c => `${c.consumerNumber}:${c.assignedSymbol}`).join(',')})
+      Statuses: ${partitionedConsumers.map(c => `${c.consumerNumber}=${c.status}`).join(', ')}`);
+
+    // Detect rebalancing by tracking assignment changes
+    // When a consumer goes down or comes up, assignments may shift
+    this.detectRebalancing(partitionedConsumers);
+  }
+
+  detectRebalancing(partitionedConsumers) {
+    const connectedConsumers = partitionedConsumers.filter(c => c.status === 'connected' || c.status === 'active');
+    const assignedConsumers = partitionedConsumers.filter(c => c.assignedSymbol !== null);
+
+    // Build current assignment snapshot (only include connected consumers)
+    const currentAssignments = {};
+    partitionedConsumers.forEach(c => {
+      // Only track assignments for connected/active consumers
+      if (c.status === 'connected' || c.status === 'active') {
+        currentAssignments[c.id] = c.assignedSymbol;
+      }
+    });
+
+    // Detect changes from last snapshot
+    if (this.lastAssignmentSnapshot) {
+      // Check if assignment map has changed (different keys or different values)
+      const lastKeys = Object.keys(this.lastAssignmentSnapshot).sort();
+      const currentKeys = Object.keys(currentAssignments).sort();
+
+      const keysChanged = lastKeys.length !== currentKeys.length ||
+                         lastKeys.some((key, i) => key !== currentKeys[i]);
+
+      const valuesChanged = currentKeys.some(
+        id => currentAssignments[id] !== this.lastAssignmentSnapshot[id]
+      );
+
+      if (keysChanged || valuesChanged) {
+        console.log('🔄 Partition assignment change detected:');
+        console.log('   Previous:', JSON.stringify(this.lastAssignmentSnapshot));
+        console.log('   Current:', JSON.stringify(currentAssignments));
+
+        this.setPartitionState('rebalancing');
+
+        // Clear any existing timer
+        if (this.rebalanceDetectionTimer) {
+          clearTimeout(this.rebalanceDetectionTimer);
+        }
+
+        // Set a timer to transition to BALANCED after assignments stabilize
+        // Solace typically completes rebalancing within a few seconds
+        this.rebalanceDetectionTimer = setTimeout(() => {
+          console.log('✅ Partition assignments stabilized - entering BALANCED state');
+          this.setPartitionState('balanced');
+          this.rebalanceDetectionTimer = null;
+        }, 5000); // Wait 5 seconds for stability (increased from 3s to match Solace rebalance time)
+      }
+    } else {
+      // First snapshot - if we have assignments and connected consumers, we're balanced
+      if (connectedConsumers.length > 0 && assignedConsumers.length > 0) {
+        this.setPartitionState('balanced');
+      } else if (connectedConsumers.length > 0) {
+        this.setPartitionState('rebalancing');
+      }
+    }
+
+    // Save snapshot
+    this.lastAssignmentSnapshot = { ...currentAssignments };
+  }
+
+  setPartitionState(newState) {
+    if (newState !== this.partitionState) {
+      const oldState = this.partitionState;
+      this.partitionState = newState;
+      console.log(`🔀 Partition state changed: ${oldState} → ${newState}`);
+
+      this.broadcast({
+        type: 'partitionState',
+        state: newState
+      });
+    }
+  }
+
   async createConsumers() {
     const queues = [
       { name: 'Orders_PQ', type: 'partitioned', count: 5 },
@@ -111,7 +209,13 @@ class ConsumerManager {
           queue.name,
           queue.type,
           i + 1,
-          (data) => this.broadcast(data)
+          (data) => {
+            this.broadcast(data);
+            // Check partition state whenever partitioned queue consumers update
+            if (data.triggerPartitionCheck || (queue.type === 'partitioned' && data.type === 'order')) {
+              this.checkPartitionState();
+            }
+          }
         );
         this.consumers.push(consumer);
         await consumer.connect();
@@ -311,7 +415,8 @@ class QueueConsumer {
       queueName: this.queueName,
       queueType: this.queueType,
       consumerNumber: this.consumerNumber,
-      status: this.status
+      status: this.status,
+      triggerPartitionCheck: this.queueType === 'partitioned' // Signal to check partition state
     });
   }
 
@@ -320,6 +425,12 @@ class QueueConsumer {
 
     this.manualDisconnect = true; // Mark as manual disconnect
     this.status = 'down';
+
+    // Clear assigned symbol when disconnecting - partitions will be reassigned
+    if (this.queueType === 'partitioned') {
+      this.assignedSymbol = null;
+    }
+
     this.broadcastStatus();
 
     if (this.messageConsumer) {

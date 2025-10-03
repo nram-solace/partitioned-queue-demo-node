@@ -1,10 +1,31 @@
 import ConsumerTile from './ConsumerTile'
 
-function QueuePanel({ title, description, consumers, queueType, onDisconnect, onReconnect }) {
+function QueuePanel({ title, description, consumers, queueType, partitionState, onDisconnect, onReconnect }) {
+  // Format partition state for display
+  const getStateDisplay = () => {
+    if (queueType !== 'partitioned' || !partitionState) return ''
+
+    const stateMap = {
+      'balanced': { text: 'BALANCED', color: 'text-green-400' },
+      'rebalancing': { text: 'REBALANCING', color: 'text-yellow-400' },
+      'unknown': { text: 'UNKNOWN', color: 'text-gray-400' }
+    }
+
+    const state = stateMap[partitionState] || stateMap.unknown
+    return (
+      <span className={`ml-2 ${state.color} font-semibold`}>
+        [{state.text}]
+      </span>
+    )
+  }
+
   return (
     <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-hidden">
       <div className="bg-slate-750 px-6 py-4 border-b border-slate-700">
-        <h2 className="text-xl font-bold mb-1">{title}</h2>
+        <h2 className="text-xl font-bold mb-1">
+          {title}
+          {getStateDisplay()}
+        </h2>
         <p className="text-sm text-slate-400">{description}</p>
       </div>
 
