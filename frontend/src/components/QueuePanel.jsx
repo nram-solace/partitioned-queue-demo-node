@@ -6,16 +6,27 @@ function QueuePanel({ title, description, consumers, queueType, partitionState, 
     let currentState = null
 
     if (queueType === 'partitioned') {
-      currentState = partitionState
-      const stateMap = {
+      // Show both partition state (balanced/rebalancing) and operational state (operational/degraded/down)
+      const partitionStateMap = {
         'balanced': { text: 'BALANCED', color: 'text-green-400' },
         'rebalancing': { text: 'REBALANCING', color: 'text-yellow-400' },
         'unknown': { text: 'UNKNOWN', color: 'text-gray-400' }
       }
-      const state = stateMap[currentState] || stateMap.unknown
+      const operationalStateMap = {
+        'operational': { text: 'OPERATIONAL', color: 'text-green-400' },
+        'degraded': { text: 'DEGRADED', color: 'text-yellow-400' },
+        'down': { text: 'DOWN', color: 'text-red-500' },
+        'unknown': { text: 'UNKNOWN', color: 'text-gray-400' }
+      }
+
+      const pState = partitionStateMap[partitionState] || partitionStateMap.unknown
+      const oState = operationalStateMap[queueState] || operationalStateMap.unknown
+
       return (
-        <span className={`ml-2 ${state.color} font-semibold`}>
-          [{state.text}]
+        <span className="ml-2 font-semibold">
+          <span className={oState.color}>[{oState.text}]</span>
+          <span className="mx-1">·</span>
+          <span className={pState.color}>[{pState.text}]</span>
         </span>
       )
     } else if (queueType === 'non-exclusive' || queueType === 'exclusive') {

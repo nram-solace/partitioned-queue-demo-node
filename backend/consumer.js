@@ -14,6 +14,7 @@ class ConsumerManager {
     this.wsServer = null;
     this.clients = new Set();
     this.partitionState = 'unknown'; // States: unknown, balanced, rebalancing
+    this.partitionedState = 'unknown'; // States: unknown, operational, degraded, down
     this.nonExclusiveState = 'unknown'; // States: unknown, operational, degraded, down
     this.exclusiveState = 'unknown'; // States: unknown, operational, degraded, down
     this.lastPartitionCheck = null;
@@ -75,6 +76,7 @@ class ConsumerManager {
         assignedSymbol: c.assignedSymbol
       })),
       partitionState: this.partitionState,
+      partitionedState: this.partitionedState,
       nonExclusiveState: this.nonExclusiveState,
       exclusiveState: this.exclusiveState
     };
@@ -124,6 +126,39 @@ class ConsumerManager {
     // Detect rebalancing by tracking assignment changes
     // When a consumer goes down or comes up, assignments may shift
     this.detectRebalancing(partitionedConsumers);
+
+    // Check operational state (similar to non-exclusive and exclusive)
+    this.checkPartitionedOperationalState();
+  }
+
+  checkPartitionedOperationalState() {
+    const partitionedConsumers = this.consumers.filter(c => c.queueType === 'partitioned');
+    const connectedConsumers = partitionedConsumers.filter(c =>
+      c.status === 'connected' || c.status === 'active' || c.status === 'standby'
+    );
+
+    let newState = 'unknown';
+
+    if (connectedConsumers.length === 0) {
+      // All consumers down - queue cannot process messages
+      newState = 'down';
+    } else if (connectedConsumers.length === partitionedConsumers.length) {
+      // All consumers operational
+      newState = 'operational';
+    } else {
+      // Some consumers down, but at least one operational
+      newState = 'degraded';
+    }
+
+    if (newState !== this.partitionedState) {
+      this.partitionedState = newState;
+      console.log(`🔀 Partitioned Queue operational state: ${newState}`);
+      this.broadcast({
+        type: 'queueState',
+        queueType: 'partitioned',
+        state: newState
+      });
+    }
   }
 
   checkNonExclusiveState() {
@@ -278,6 +313,9 @@ class ConsumerManager {
             // Check queue state on status changes only (not on every message)
             if (data.triggerPartitionCheck) {
               this.checkPartitionState();
+            }
+            if (queue.type === 'partitioned' && data.type === 'status') {
+              this.checkPartitionedOperationalState();
             }
             if (queue.type === 'non-exclusive' && data.type === 'status') {
               this.checkNonExclusiveState();

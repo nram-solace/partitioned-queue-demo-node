@@ -41,6 +41,7 @@ function App() {
   const [wsConnected, setWsConnected] = useState(false)
   const [reconnectAttempt, setReconnectAttempt] = useState(0)
   const [partitionState, setPartitionState] = useState('unknown')
+  const [partitionedState, setPartitionedState] = useState('unknown')
   const [nonExclusiveState, setNonExclusiveState] = useState('unknown')
   const [exclusiveState, setExclusiveState] = useState('unknown')
 
@@ -71,6 +72,9 @@ function App() {
           if (data.partitionState) {
             setPartitionState(data.partitionState)
           }
+          if (data.partitionedState) {
+            setPartitionedState(data.partitionedState)
+          }
           if (data.nonExclusiveState) {
             setNonExclusiveState(data.nonExclusiveState)
           }
@@ -81,8 +85,10 @@ function App() {
           // Partition state update
           setPartitionState(data.state)
         } else if (data.type === 'queueState') {
-          // Queue state update for non-exclusive and exclusive queues
-          if (data.queueType === 'non-exclusive') {
+          // Queue state update for all queue types
+          if (data.queueType === 'partitioned') {
+            setPartitionedState(data.state)
+          } else if (data.queueType === 'non-exclusive') {
             setNonExclusiveState(data.state)
           } else if (data.queueType === 'exclusive') {
             setExclusiveState(data.state)
@@ -213,6 +219,7 @@ function App() {
           consumers={consumers.partitioned}
           queueType="partitioned"
           partitionState={partitionState}
+          queueState={partitionedState}
           onDisconnect={handleDisconnect}
           onReconnect={handleReconnect}
         />
