@@ -22,6 +22,19 @@ class ConsumerManager {
       console.log('📱 Dashboard connected');
       this.clients.add(ws);
 
+      ws.on('message', (message) => {
+        try {
+          const data = JSON.parse(message);
+          if (data.type === 'disconnect') {
+            this.handleDisconnectRequest(data.consumerId);
+          } else if (data.type === 'reconnect') {
+            this.handleReconnectRequest(data.consumerId);
+          }
+        } catch (error) {
+          console.error('❌ Error handling WebSocket message:', error);
+        }
+      });
+
       ws.on('close', () => {
         console.log('📱 Dashboard disconnected');
         this.clients.delete(ws);
@@ -60,6 +73,26 @@ class ConsumerManager {
 
     if (client.readyState === WebSocket.OPEN) {
       client.send(JSON.stringify(state));
+    }
+  }
+
+  handleDisconnectRequest(consumerId) {
+    const consumer = this.consumers.find(c => c.id === consumerId);
+    if (consumer) {
+      console.log(`🔌 Disconnecting consumer ${consumerId} (${consumer.queueName}-${consumer.consumerNumber})`);
+      consumer.disconnect();
+    } else {
+      console.warn(`⚠️  Consumer ${consumerId} not found`);
+    }
+  }
+
+  async handleReconnectRequest(consumerId) {
+    const consumer = this.consumers.find(c => c.id === consumerId);
+    if (consumer) {
+      console.log(`🔄 Reconnecting consumer ${consumerId} (${consumer.queueName}-${consumer.consumerNumber})`);
+      await consumer.connect();
+    } else {
+      console.warn(`⚠️  Consumer ${consumerId} not found`);
     }
   }
 
@@ -118,6 +151,7 @@ class QueueConsumer {
     this.lastOrders = [];
     this.startTime = Date.now();
     this.assignedSymbol = null; // Track which symbol this partition is handling
+    this.manualDisconnect = false; // Track if disconnect was manual
   }
 
   connect() {
@@ -145,9 +179,13 @@ class QueueConsumer {
         });
 
         this.session.on(solace.SessionEventCode.DISCONNECTED, () => {
-          this.status = 'offline';
-          console.log(`⚠️  Consumer ${this.id} disconnected`);
-          this.broadcastStatus();
+          // Only change status to offline if it wasn't a manual disconnect
+          if (!this.manualDisconnect) {
+            this.status = 'offline';
+            console.log(`⚠️  Consumer ${this.id} disconnected`);
+            this.broadcastStatus();
+          }
+          this.manualDisconnect = false; // Reset flag
         });
 
         this.session.connect();
@@ -278,12 +316,20 @@ class QueueConsumer {
   }
 
   disconnect() {
+    console.log(`🔌 Disconnecting consumer ${this.id} (${this.queueName}-${this.consumerNumber})`);
+
+    this.manualDisconnect = true; // Mark as manual disconnect
+    this.status = 'down';
+    this.broadcastStatus();
+
     if (this.messageConsumer) {
       this.messageConsumer.disconnect();
       this.messageConsumer.dispose();
+      this.messageConsumer = null;
     }
     if (this.session) {
       this.session.disconnect();
+      this.session = null;
     }
   }
 }

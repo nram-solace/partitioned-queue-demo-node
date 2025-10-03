@@ -16,13 +16,14 @@ const symbolBgColors = {
   'TSLA': 'bg-purple-500/10',
 }
 
-function ConsumerTile({ consumer, queueType, consumerNumber }) {
+function ConsumerTile({ consumer, queueType, consumerNumber, onDisconnect, onReconnect }) {
   const isActive = consumer.status === 'active'
   const isStandby = consumer.status === 'standby'
   const latestOrder = consumer.lastOrders && consumer.lastOrders[0]
 
   const getStatusIcon = () => {
     if (consumer.status === 'offline') return '⚫'
+    if (consumer.status === 'down') return '🔴'
     if (isStandby) return '⚪'
     if (isActive) return '🟢'
     if (consumer.status === 'connected') return '🔵'
@@ -32,6 +33,7 @@ function ConsumerTile({ consumer, queueType, consumerNumber }) {
 
   const getStatusText = () => {
     if (consumer.status === 'offline') return 'OFFLINE'
+    if (consumer.status === 'down') return 'Down'
     if (isStandby) return 'Standby'
     if (isActive) return 'Active'
     if (consumer.status === 'connected') return 'Connected'
@@ -60,9 +62,32 @@ function ConsumerTile({ consumer, queueType, consumerNumber }) {
       <div className="mb-3 pb-3 border-b border-slate-700">
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-sm font-bold">Consumer {consumerNumber}</h3>
-          <div className="flex items-center gap-1">
-            <span>{getStatusIcon()}</span>
-            <span className="text-xs">{getStatusText()}</span>
+          <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1">
+              <span>{getStatusIcon()}</span>
+              <span className="text-xs">{getStatusText()}</span>
+            </div>
+            {consumer.status === 'down' ? (
+              <button
+                onClick={() => onReconnect(consumer.id)}
+                className="text-slate-500 hover:text-green-400 transition-colors"
+                title="Reconnect consumer"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+              </button>
+            ) : consumer.status !== 'offline' ? (
+              <button
+                onClick={() => onDisconnect(consumer.id)}
+                className="text-slate-500 hover:text-red-400 transition-colors"
+                title="Disconnect consumer"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            ) : null}
           </div>
         </div>
         <div className="flex items-center justify-between">

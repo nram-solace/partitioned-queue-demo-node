@@ -83,6 +83,9 @@ function App() {
           connect()
         }, 3000)
       }
+
+      // Store ws reference for disconnect function
+      window.wsConnection = ws
     }
 
     connect()
@@ -94,6 +97,7 @@ function App() {
       if (ws) {
         ws.close()
       }
+      window.wsConnection = null
     }
   }, [])
 
@@ -156,6 +160,24 @@ function App() {
     })
   }
 
+  const handleDisconnect = (consumerId) => {
+    if (window.wsConnection && window.wsConnection.readyState === WebSocket.OPEN) {
+      window.wsConnection.send(JSON.stringify({
+        type: 'disconnect',
+        consumerId
+      }))
+    }
+  }
+
+  const handleReconnect = (consumerId) => {
+    if (window.wsConnection && window.wsConnection.readyState === WebSocket.OPEN) {
+      window.wsConnection.send(JSON.stringify({
+        type: 'reconnect',
+        consumerId
+      }))
+    }
+  }
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100">
       <Header connected={wsConnected} />
@@ -168,6 +190,8 @@ function App() {
           description="Symbol-based routing - Each consumer handles specific stocks"
           consumers={consumers.partitioned}
           queueType="partitioned"
+          onDisconnect={handleDisconnect}
+          onReconnect={handleReconnect}
         />
 
         <QueuePanel
@@ -175,6 +199,8 @@ function App() {
           description="Load balanced - All consumers compete for messages"
           consumers={consumers.nonExclusive}
           queueType="non-exclusive"
+          onDisconnect={handleDisconnect}
+          onReconnect={handleReconnect}
         />
 
         <QueuePanel
@@ -182,6 +208,8 @@ function App() {
           description="Single active consumer - Others on standby"
           consumers={consumers.exclusive}
           queueType="exclusive"
+          onDisconnect={handleDisconnect}
+          onReconnect={handleReconnect}
         />
       </div>
     </div>

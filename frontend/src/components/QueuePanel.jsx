@@ -1,6 +1,6 @@
 import ConsumerTile from './ConsumerTile'
 
-function QueuePanel({ title, description, consumers, queueType }) {
+function QueuePanel({ title, description, consumers, queueType, onDisconnect, onReconnect }) {
   return (
     <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-hidden">
       <div className="bg-slate-750 px-6 py-4 border-b border-slate-700">
@@ -15,6 +15,8 @@ function QueuePanel({ title, description, consumers, queueType }) {
             consumer={consumer}
             queueType={queueType}
             consumerNumber={index + 1}
+            onDisconnect={onDisconnect}
+            onReconnect={onReconnect}
           />
         ))}
       </div>

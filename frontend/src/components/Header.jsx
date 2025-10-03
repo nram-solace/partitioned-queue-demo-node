@@ -7,7 +7,7 @@ function Header({ connected }) {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-white mb-2">
-              Stock Order Processing Demo
+              Market Data Demo with Solace Queues 
             </h1>
             <p className="text-slate-400">
               Solace PubSub+ Event Broker - Queue Types Comparison
