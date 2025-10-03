@@ -1,22 +1,40 @@
 import ConsumerTile from './ConsumerTile'
 
-function QueuePanel({ title, description, consumers, queueType, partitionState, onDisconnect, onReconnect }) {
-  // Format partition state for display
+function QueuePanel({ title, description, consumers, queueType, partitionState, queueState, onDisconnect, onReconnect }) {
+  // Format state for display
   const getStateDisplay = () => {
-    if (queueType !== 'partitioned' || !partitionState) return ''
+    let currentState = null
 
-    const stateMap = {
-      'balanced': { text: 'BALANCED', color: 'text-green-400' },
-      'rebalancing': { text: 'REBALANCING', color: 'text-yellow-400' },
-      'unknown': { text: 'UNKNOWN', color: 'text-gray-400' }
+    if (queueType === 'partitioned') {
+      currentState = partitionState
+      const stateMap = {
+        'balanced': { text: 'BALANCED', color: 'text-green-400' },
+        'rebalancing': { text: 'REBALANCING', color: 'text-yellow-400' },
+        'unknown': { text: 'UNKNOWN', color: 'text-gray-400' }
+      }
+      const state = stateMap[currentState] || stateMap.unknown
+      return (
+        <span className={`ml-2 ${state.color} font-semibold`}>
+          [{state.text}]
+        </span>
+      )
+    } else if (queueType === 'non-exclusive' || queueType === 'exclusive') {
+      currentState = queueState
+      const stateMap = {
+        'operational': { text: 'OPERATIONAL', color: 'text-green-400' },
+        'degraded': { text: 'DEGRADED', color: 'text-yellow-400' },
+        'down': { text: 'DOWN', color: 'text-red-500' },
+        'unknown': { text: 'UNKNOWN', color: 'text-gray-400' }
+      }
+      const state = stateMap[currentState] || stateMap.unknown
+      return (
+        <span className={`ml-2 ${state.color} font-semibold`}>
+          [{state.text}]
+        </span>
+      )
     }
 
-    const state = stateMap[partitionState] || stateMap.unknown
-    return (
-      <span className={`ml-2 ${state.color} font-semibold`}>
-        [{state.text}]
-      </span>
-    )
+    return ''
   }
 
   return (

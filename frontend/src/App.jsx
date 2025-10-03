@@ -41,6 +41,8 @@ function App() {
   const [wsConnected, setWsConnected] = useState(false)
   const [reconnectAttempt, setReconnectAttempt] = useState(0)
   const [partitionState, setPartitionState] = useState('unknown')
+  const [nonExclusiveState, setNonExclusiveState] = useState('unknown')
+  const [exclusiveState, setExclusiveState] = useState('unknown')
 
   useEffect(() => {
     let ws = null
@@ -69,9 +71,22 @@ function App() {
           if (data.partitionState) {
             setPartitionState(data.partitionState)
           }
+          if (data.nonExclusiveState) {
+            setNonExclusiveState(data.nonExclusiveState)
+          }
+          if (data.exclusiveState) {
+            setExclusiveState(data.exclusiveState)
+          }
         } else if (data.type === 'partitionState') {
           // Partition state update
           setPartitionState(data.state)
+        } else if (data.type === 'queueState') {
+          // Queue state update for non-exclusive and exclusive queues
+          if (data.queueType === 'non-exclusive') {
+            setNonExclusiveState(data.state)
+          } else if (data.queueType === 'exclusive') {
+            setExclusiveState(data.state)
+          }
         }
       }
 
@@ -207,6 +222,7 @@ function App() {
           description="Load balanced - All consumers compete for messages"
           consumers={consumers.nonExclusive}
           queueType="non-exclusive"
+          queueState={nonExclusiveState}
           onDisconnect={handleDisconnect}
           onReconnect={handleReconnect}
         />
@@ -216,6 +232,7 @@ function App() {
           description="Single active consumer - Others on standby"
           consumers={consumers.exclusive}
           queueType="exclusive"
+          queueState={exclusiveState}
           onDisconnect={handleDisconnect}
           onReconnect={handleReconnect}
         />

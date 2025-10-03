@@ -14,6 +14,8 @@ class ConsumerManager {
     this.wsServer = null;
     this.clients = new Set();
     this.partitionState = 'unknown'; // States: unknown, balanced, rebalancing
+    this.nonExclusiveState = 'unknown'; // States: unknown, operational, degraded, down
+    this.exclusiveState = 'unknown'; // States: unknown, operational, degraded, down
     this.lastPartitionCheck = null;
     this.rebalanceDetectionTimer = null;
   }
@@ -72,7 +74,9 @@ class ConsumerManager {
         lastOrders: c.lastOrders,
         assignedSymbol: c.assignedSymbol
       })),
-      partitionState: this.partitionState
+      partitionState: this.partitionState,
+      nonExclusiveState: this.nonExclusiveState,
+      exclusiveState: this.exclusiveState
     };
 
     if (client.readyState === WebSocket.OPEN) {
@@ -120,6 +124,66 @@ class ConsumerManager {
     // Detect rebalancing by tracking assignment changes
     // When a consumer goes down or comes up, assignments may shift
     this.detectRebalancing(partitionedConsumers);
+  }
+
+  checkNonExclusiveState() {
+    const nonExclusiveConsumers = this.consumers.filter(c => c.queueType === 'non-exclusive');
+    const connectedConsumers = nonExclusiveConsumers.filter(c =>
+      c.status === 'connected' || c.status === 'active' || c.status === 'standby'
+    );
+
+    let newState = 'unknown';
+
+    if (connectedConsumers.length === 0) {
+      // All consumers down - queue cannot process messages
+      newState = 'down';
+    } else if (connectedConsumers.length === nonExclusiveConsumers.length) {
+      // All consumers operational
+      newState = 'operational';
+    } else {
+      // Some consumers down, but at least one operational
+      newState = 'degraded';
+    }
+
+    if (newState !== this.nonExclusiveState) {
+      this.nonExclusiveState = newState;
+      console.log(`🔄 Non-Exclusive Queue state: ${newState}`);
+      this.broadcast({
+        type: 'queueState',
+        queueType: 'non-exclusive',
+        state: newState
+      });
+    }
+  }
+
+  checkExclusiveState() {
+    const exclusiveConsumers = this.consumers.filter(c => c.queueType === 'exclusive');
+    const connectedConsumers = exclusiveConsumers.filter(c =>
+      c.status === 'connected' || c.status === 'active' || c.status === 'standby'
+    );
+
+    let newState = 'unknown';
+
+    if (connectedConsumers.length === 0) {
+      // All consumers down - queue cannot process messages
+      newState = 'down';
+    } else if (connectedConsumers.length === exclusiveConsumers.length) {
+      // All consumers operational - full HA capability
+      newState = 'operational';
+    } else {
+      // Some consumers down - high availability compromised
+      newState = 'degraded';
+    }
+
+    if (newState !== this.exclusiveState) {
+      this.exclusiveState = newState;
+      console.log(`🔒 Exclusive Queue state: ${newState}`);
+      this.broadcast({
+        type: 'queueState',
+        queueType: 'exclusive',
+        state: newState
+      });
+    }
   }
 
   detectRebalancing(partitionedConsumers) {
@@ -211,9 +275,15 @@ class ConsumerManager {
           i + 1,
           (data) => {
             this.broadcast(data);
-            // Check partition state whenever partitioned queue consumers update
+            // Check queue state whenever consumers update
             if (data.triggerPartitionCheck || (queue.type === 'partitioned' && data.type === 'order')) {
               this.checkPartitionState();
+            }
+            if (queue.type === 'non-exclusive' && (data.type === 'status' || data.type === 'order')) {
+              this.checkNonExclusiveState();
+            }
+            if (queue.type === 'exclusive' && (data.type === 'status' || data.type === 'order')) {
+              this.checkExclusiveState();
             }
           }
         );
