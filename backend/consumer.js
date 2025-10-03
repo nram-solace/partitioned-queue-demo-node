@@ -275,14 +275,14 @@ class ConsumerManager {
           i + 1,
           (data) => {
             this.broadcast(data);
-            // Check queue state whenever consumers update
-            if (data.triggerPartitionCheck || (queue.type === 'partitioned' && data.type === 'order')) {
+            // Check queue state on status changes only (not on every message)
+            if (data.triggerPartitionCheck) {
               this.checkPartitionState();
             }
-            if (queue.type === 'non-exclusive' && (data.type === 'status' || data.type === 'order')) {
+            if (queue.type === 'non-exclusive' && data.type === 'status') {
               this.checkNonExclusiveState();
             }
-            if (queue.type === 'exclusive' && (data.type === 'status' || data.type === 'order')) {
+            if (queue.type === 'exclusive' && data.type === 'status') {
               this.checkExclusiveState();
             }
           }
