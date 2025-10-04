@@ -1,6 +1,6 @@
 import ConsumerTile from './ConsumerTile'
 
-function QueuePanel({ title, description, consumers, queueType, partitionState, queueState, onDisconnect, onReconnect, queueName }) {
+function QueuePanel({ title, description, consumers, queueType, partitionState, queueState, onDisconnect, onReconnect, queueName, messageCount }) {
   // Calculate consumer counts
   const connectedConsumers = consumers.filter(c =>
     c.status === 'connected' || c.status === 'active' || c.status === 'standby'
@@ -40,11 +40,16 @@ function QueuePanel({ title, description, consumers, queueType, partitionState, 
 
     const hState = healthStateMap[queueState] || healthStateMap.unknown
 
+    // Format message count with commas
+    const formattedCount = (messageCount || 0).toLocaleString()
+
     return (
       <>
         <span>Status: </span>
         <span className={hState.color}>{hState.text}</span>
-        <span className="ml-2">( {connectedConsumers} / {totalConsumers} consumers up )</span>
+        <span className="ml-2">- {connectedConsumers} / {totalConsumers} Up</span>
+        <span className="ml-3 text-slate-400">|</span>
+        <span className="ml-3">{formattedCount} msgs</span>
       </>
     )
   }

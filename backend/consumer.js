@@ -19,6 +19,11 @@ class ConsumerManager {
     this.exclusiveState = 'unknown'; // States: unknown, healthy, degraded, down
     this.lastPartitionCheck = null;
     this.rebalanceDetectionTimer = null;
+    this.messageCounts = {
+      partitioned: 0,
+      'non-exclusive': 0,
+      exclusive: 0
+    };
   }
 
   startWebSocketServer(port = process.env.WS_PORT || 8080) {
@@ -78,7 +83,8 @@ class ConsumerManager {
       partitionState: this.partitionState,
       partitionedState: this.partitionedState,
       nonExclusiveState: this.nonExclusiveState,
-      exclusiveState: this.exclusiveState
+      exclusiveState: this.exclusiveState,
+      messageCounts: this.messageCounts
     };
 
     if (client.readyState === WebSocket.OPEN) {
@@ -310,6 +316,13 @@ class ConsumerManager {
           queue.type,
           i + 1,
           (data) => {
+            // Track message counts per queue type
+            if (data.type === 'order') {
+              this.messageCounts[queue.type]++;
+              // Add message count to the data
+              data.messageCount = this.messageCounts[queue.type];
+            }
+
             this.broadcast(data);
             // Check queue state on status changes only (not on every message)
             if (data.triggerPartitionCheck) {

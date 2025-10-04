@@ -45,6 +45,11 @@ function App() {
   const [partitionedState, setPartitionedState] = useState('unknown')
   const [nonExclusiveState, setNonExclusiveState] = useState('unknown')
   const [exclusiveState, setExclusiveState] = useState('unknown')
+  const [messageCounts, setMessageCounts] = useState({
+    partitioned: 0,
+    'non-exclusive': 0,
+    exclusive: 0
+  })
 
   useEffect(() => {
     let ws = null
@@ -64,6 +69,13 @@ function App() {
 
         if (data.type === 'order') {
           updateConsumer(data)
+          // Update message count if provided
+          if (data.messageCount) {
+            setMessageCounts(prev => ({
+              ...prev,
+              [data.queueType]: data.messageCount
+            }))
+          }
         } else if (data.type === 'status') {
           // Handle status updates
           updateConsumerStatus(data)
@@ -81,6 +93,9 @@ function App() {
           }
           if (data.exclusiveState) {
             setExclusiveState(data.exclusiveState)
+          }
+          if (data.messageCounts) {
+            setMessageCounts(data.messageCounts)
           }
         } else if (data.type === 'partitionState') {
           // Partition state update
@@ -220,6 +235,7 @@ function App() {
           queueType="partitioned"
           partitionState={partitionState}
           queueState={partitionedState}
+          messageCount={messageCounts.partitioned}
           onDisconnect={handleDisconnect}
           onReconnect={handleReconnect}
         />
@@ -229,6 +245,7 @@ function App() {
           consumers={consumers.nonExclusive}
           queueType="non-exclusive"
           queueState={nonExclusiveState}
+          messageCount={messageCounts['non-exclusive']}
           onDisconnect={handleDisconnect}
           onReconnect={handleReconnect}
         />
@@ -238,6 +255,7 @@ function App() {
           consumers={consumers.exclusive}
           queueType="exclusive"
           queueState={exclusiveState}
+          messageCount={messageCounts.exclusive}
           onDisconnect={handleDisconnect}
           onReconnect={handleReconnect}
         />
