@@ -21,7 +21,7 @@ class ConsumerManager {
     this.rebalanceDetectionTimer = null;
   }
 
-  startWebSocketServer(port = 8080) {
+  startWebSocketServer(port = process.env.WS_PORT || 8080) {
     this.wsServer = new WebSocket.Server({ port });
 
     this.wsServer.on('connection', (ws) => {
@@ -296,9 +296,9 @@ class ConsumerManager {
 
   async createConsumers() {
     const queues = [
-      { name: 'Orders_PQ', type: 'partitioned', count: 5 },
-      { name: 'NonExclusiveOrders', type: 'non-exclusive', count: 5 },
-      { name: 'ExclusiveOrders', type: 'exclusive', count: 5 }
+      { name: process.env.QUEUE_PARTITIONED || 'Orders_PQ', type: 'partitioned', count: 5 },
+      { name: process.env.QUEUE_NON_EXCLUSIVE || 'NonExclusiveOrders', type: 'non-exclusive', count: 5 },
+      { name: process.env.QUEUE_EXCLUSIVE || 'ExclusiveOrders', type: 'exclusive', count: 5 }
     ];
 
     let consumerId = 1;

@@ -2,12 +2,13 @@ import { useState, useEffect } from 'react'
 import QueuePanel from './components/QueuePanel'
 import Header from './components/Header'
 import PublisherStatus from './components/PublisherStatus'
+import { QUEUE_NAMES, WS_URL } from './config'
 
 function App() {
   const [consumers, setConsumers] = useState({
     partitioned: Array(5).fill(null).map((_, i) => ({
       id: i + 1,
-      queueName: 'Orders_PQ',
+      queueName: QUEUE_NAMES.PARTITIONED,
       queueType: 'partitioned',
       consumerNumber: i + 1,
       status: 'offline',
@@ -18,7 +19,7 @@ function App() {
     })),
     nonExclusive: Array(5).fill(null).map((_, i) => ({
       id: i + 6,
-      queueName: 'NonExclusiveOrders',
+      queueName: QUEUE_NAMES.NON_EXCLUSIVE,
       queueType: 'non-exclusive',
       consumerNumber: i + 1,
       status: 'offline',
@@ -28,7 +29,7 @@ function App() {
     })),
     exclusive: Array(5).fill(null).map((_, i) => ({
       id: i + 11,
-      queueName: 'ExclusiveOrders',
+      queueName: QUEUE_NAMES.EXCLUSIVE,
       queueType: 'exclusive',
       consumerNumber: i + 1,
       status: 'offline',
@@ -50,7 +51,7 @@ function App() {
     let reconnectTimeout = null
 
     const connect = () => {
-      ws = new WebSocket('ws://localhost:8080')
+      ws = new WebSocket(WS_URL)
 
       ws.onopen = () => {
         console.log('Connected to consumer backend')
@@ -214,8 +215,7 @@ function App() {
         <PublisherStatus />
 
         <QueuePanel
-          title="📊 PARTITIONED QUEUES (Orders_PQ)"
-          description="Symbol-based routing - Each consumer handles specific stocks"
+          queueName={QUEUE_NAMES.PARTITIONED}
           consumers={consumers.partitioned}
           queueType="partitioned"
           partitionState={partitionState}
@@ -225,8 +225,7 @@ function App() {
         />
 
         <QueuePanel
-          title="🔄 NON-EXCLUSIVE QUEUES (NonExclusiveOrders)"
-          description="Load balanced - All consumers compete for messages"
+          queueName={QUEUE_NAMES.NON_EXCLUSIVE}
           consumers={consumers.nonExclusive}
           queueType="non-exclusive"
           queueState={nonExclusiveState}
@@ -235,8 +234,7 @@ function App() {
         />
 
         <QueuePanel
-          title="🔒 EXCLUSIVE QUEUES (ExclusiveOrders)"
-          description="Single active consumer - Others on standby"
+          queueName={QUEUE_NAMES.EXCLUSIVE}
           consumers={consumers.exclusive}
           queueType="exclusive"
           queueState={exclusiveState}
