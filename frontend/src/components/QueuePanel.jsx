@@ -55,9 +55,22 @@ function QueuePanel({ title, description, consumers, queueType, partitionState, 
     )
   }
 
+  // Different background colors for each queue type
+  const getBgColors = () => {
+    if (queueType === 'partitioned') {
+      return { outer: 'bg-slate-800', inner: 'bg-slate-750', border: 'border-blue-800' }
+    } else if (queueType === 'non-exclusive') {
+      return { outer: 'bg-slate-800', inner: 'bg-slate-750', border: 'border-purple-800' }
+    } else {
+      return { outer: 'bg-slate-800', inner: 'bg-slate-750', border: 'border-orange-900' }
+    }
+  }
+
+  const colors = getBgColors()
+
   return (
-    <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-hidden">
-      <div className="bg-slate-750 px-6 py-4 border-b border-slate-700">
+    <div className={`${colors.outer} rounded-lg border-2 ${colors.border} overflow-hidden`}>
+      <div className={`${colors.inner} px-6 py-4 border-b border-slate-700`}>
         <h2 className="text-lg font-semibold flex items-center justify-between">
           <span>{getLeftText()}</span>
           <span>{getRightText()}</span>

@@ -2,7 +2,7 @@ function PublisherStatus({ totalMessages, topicName }) {
   const formattedCount = (totalMessages || 0).toLocaleString()
 
   return (
-    <div className="bg-slate-800 rounded-lg border border-slate-700 p-4">
+    <div className="bg-slate-800 rounded-lg border-2 border-green-800 p-4">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-lg font-semibold">
