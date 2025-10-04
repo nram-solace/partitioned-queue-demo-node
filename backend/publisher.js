@@ -1,4 +1,5 @@
 const solace = require('solclientjs');
+const WebSocket = require('ws');
 require('dotenv').config();
 
 // Initialize Solace factory
@@ -15,10 +16,48 @@ class StockOrderPublisher {
     this.topicPrefix = process.env.TOPIC_PREFIX || 'stocks/orders';
     this.orderCounter = 1;
     this.publishInterval = null;
+    this.statsInterval = null;
+    this.publishedCount = 0;
+    this.wsClient = null;
 
     this.sides = ['BUY', 'SELL'];
     this.orderTypes = ['MARKET', 'LIMIT'];
     this.traders = ['trader_01', 'trader_02', 'trader_03', 'trader_04', 'trader_05'];
+  }
+
+  connectToWebSocket() {
+    const wsPort = process.env.WS_PORT || 8080;
+    const wsUrl = `ws://localhost:${wsPort}`;
+
+    try {
+      this.wsClient = new WebSocket(wsUrl);
+
+      this.wsClient.on('open', () => {
+        console.log('📡 Connected to WebSocket server');
+      });
+
+      this.wsClient.on('error', (error) => {
+        console.warn('⚠️  WebSocket connection failed:', error.message);
+      });
+
+      this.wsClient.on('close', () => {
+        console.log('📡 WebSocket disconnected, attempting reconnect...');
+        setTimeout(() => this.connectToWebSocket(), 3000);
+      });
+    } catch (error) {
+      console.warn('⚠️  Could not connect to WebSocket:', error.message);
+    }
+  }
+
+  sendPublisherStats() {
+    if (this.wsClient && this.wsClient.readyState === WebSocket.OPEN) {
+      this.wsClient.send(JSON.stringify({
+        type: 'publisherStats',
+        publishedCount: this.publishedCount,
+        rate: this.publishRate,
+        topicName: `${this.topicPrefix}/>` // Show topic pattern
+      }));
+    }
   }
 
   connect() {
@@ -106,6 +145,7 @@ class StockOrderPublisher {
 
     try {
       this.session.send(message);
+      this.publishedCount++;
       console.log(`📤 Published: ${order.symbol} (P${partitionKey}) ${order.side} ${order.quantity} @ ${order.price}`);
     } catch (error) {
       console.error('❌ Failed to publish:', error);
@@ -122,6 +162,11 @@ class StockOrderPublisher {
       const order = this.generateOrder();
       this.publishOrder(order);
     }, intervalMs);
+
+    // Send stats every second to ensure real-time updates
+    this.statsInterval = setInterval(() => {
+      this.sendPublisherStats();
+    }, 1000);
   }
 
   stopPublishing() {
@@ -130,6 +175,12 @@ class StockOrderPublisher {
       this.publishInterval = null;
       console.log('⏸️  Publishing stopped');
     }
+    if (this.statsInterval) {
+      clearInterval(this.statsInterval);
+      this.statsInterval = null;
+    }
+    // Send final stats
+    this.sendPublisherStats();
   }
 
   disconnect() {
@@ -146,6 +197,7 @@ async function main() {
 
   try {
     await publisher.connect();
+    publisher.connectToWebSocket();
     publisher.startPublishing();
 
     // Handle graceful shutdown

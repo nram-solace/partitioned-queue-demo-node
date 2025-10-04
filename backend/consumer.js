@@ -24,6 +24,11 @@ class ConsumerManager {
       'non-exclusive': 0,
       exclusive: 0
     };
+    this.publisherStats = {
+      publishedCount: 0,
+      rate: 0,
+      topicName: ''
+    };
   }
 
   startWebSocketServer(port = process.env.WS_PORT || 8080) {
@@ -40,6 +45,17 @@ class ConsumerManager {
             this.handleDisconnectRequest(data.consumerId);
           } else if (data.type === 'reconnect') {
             this.handleReconnectRequest(data.consumerId);
+          } else if (data.type === 'publisherStats') {
+            // Receive publisher stats and broadcast to all dashboards
+            this.publisherStats = {
+              publishedCount: data.publishedCount,
+              rate: data.rate,
+              topicName: data.topicName || ''
+            };
+            this.broadcast({
+              type: 'publisherStats',
+              ...this.publisherStats
+            });
           }
         } catch (error) {
           console.error('❌ Error handling WebSocket message:', error);
@@ -84,7 +100,8 @@ class ConsumerManager {
       partitionedState: this.partitionedState,
       nonExclusiveState: this.nonExclusiveState,
       exclusiveState: this.exclusiveState,
-      messageCounts: this.messageCounts
+      messageCounts: this.messageCounts,
+      publisherStats: this.publisherStats
     };
 
     if (client.readyState === WebSocket.OPEN) {

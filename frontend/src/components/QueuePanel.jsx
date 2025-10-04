@@ -47,7 +47,8 @@ function QueuePanel({ title, description, consumers, queueType, partitionState, 
       <>
         <span>Status: </span>
         <span className={hState.color}>{hState.text}</span>
-        <span className="ml-2">- {connectedConsumers} / {totalConsumers} Up</span>
+        <span className="ml-3 text-slate-400">|</span>
+        <span className="ml-3">{connectedConsumers} / {totalConsumers} Up</span>
         <span className="ml-3 text-slate-400">|</span>
         <span className="ml-3">{formattedCount} msgs</span>
       </>

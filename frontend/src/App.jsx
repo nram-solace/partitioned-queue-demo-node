@@ -50,6 +50,11 @@ function App() {
     'non-exclusive': 0,
     exclusive: 0
   })
+  const [publisherStats, setPublisherStats] = useState({
+    publishedCount: 0,
+    rate: 0,
+    topicName: ''
+  })
 
   useEffect(() => {
     let ws = null
@@ -97,6 +102,16 @@ function App() {
           if (data.messageCounts) {
             setMessageCounts(data.messageCounts)
           }
+          if (data.publisherStats) {
+            setPublisherStats(data.publisherStats)
+          }
+        } else if (data.type === 'publisherStats') {
+          // Real-time publisher stats update
+          setPublisherStats({
+            publishedCount: data.publishedCount,
+            rate: data.rate,
+            topicName: data.topicName || ''
+          })
         } else if (data.type === 'partitionState') {
           // Partition state update
           setPartitionState(data.state)
@@ -227,7 +242,10 @@ function App() {
       <Header connected={wsConnected} />
 
       <div className="container mx-auto px-4 py-6 space-y-6">
-        <PublisherStatus />
+        <PublisherStatus
+          totalMessages={publisherStats.publishedCount}
+          topicName={publisherStats.topicName}
+        />
 
         <QueuePanel
           queueName={QUEUE_NAMES.PARTITIONED}
