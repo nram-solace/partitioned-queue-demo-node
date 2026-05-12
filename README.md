@@ -1,16 +1,10 @@
-# Partitioned Queue Demo - Solace PubSub+ Queue Types
+# Solace Queue Types — Interactive Demo
 
-A real-time interactive dashboard demonstrating three different Solace PubSub+ queue types (Partitioned, Non-Exclusive, and Exclusive) using a stock order processing simulation.
+Real-time **React** dashboard for **Solace PubSub+** queue behavior: partitioned, non-exclusive, and exclusive queues, driven by a simulated stock-order publisher.
 
-## Overview
+![Screenshot](./resources/screenshot.png)
 
-This demo visualizes how different queue types handle message distribution across multiple consumers:
-
-- **Partitioned Queue**: Messages are distributed based on a partition key (stock symbol), ensuring consistent routing and ordering per partition
-- **Non-Exclusive Queue**: Messages are load-balanced across all active consumers for maximum throughput
-- **Exclusive Queue**: Only one consumer is active at a time, with others in standby for high availability
-
-## Architecture
+## Architecture at a glance
 
 ```
 Publisher (Node.js)
@@ -19,8 +13,8 @@ Publisher (Node.js)
     ↓
 Three Queues (all subscribed to stocks/orders/>)
     ├── Orders_PQ (Partitioned Queue) - 5 partitions
-    ├── NonExclusiveOrders (Non-Exclusive Queue)
-    └── ExclusiveOrders (Exclusive Queue)
+    ├── Orders_NQ (Non-Exclusive Queue)
+    └── Orders_EQ (Exclusive Queue)
     ↓
 15 Consumers (5 per queue type)
     ↓ sends real-time updates via WebSocket
@@ -28,415 +22,248 @@ Three Queues (all subscribed to stocks/orders/>)
 React Dashboard (Vite + React)
 ```
 
-## Prerequisites
+## Getting started
 
-- **Node.js** (v14 or higher)
-- **Docker and Docker Compose** (for running Solace broker locally)
-- **Solace PubSub+ Event Broker** (local via Docker or cloud instance)
-- Access to create queues and configure subscriptions on the broker
+### Prerequisites
 
-## Quick Start with Docker
+- **Node.js** (v14+)
+- **Docker and Docker Compose** (optional; for local broker)
+- **Solace PubSub+** broker you can manage (create queues and topic subscriptions)
 
-### Start Solace PubSub+ Broker
-
-The easiest way to get started is to run the Solace broker using Docker Compose:
+### 1. Start the broker (Docker)
 
 ```bash
-# Start the Solace broker
 docker-compose up -d
+```
 
-# Check broker status
+Endpoints (typical local setup):
+
+- **Messaging WebSocket**: `ws://localhost:8008`
+- **PubSub+ Manager**: http://localhost:8080 (`admin` / `admin`)
+
+The broker may take 30–60 seconds to become ready (logs show the broker is up, or Manager loads).
+
+Additional docker commands:
+
+```bash
+Check process:
 docker-compose ps
 
-# View broker logs
-docker-compose logs -f solace-broker
-```
+Check logs:
+docker-compose logs -f solace-pqdemo
 
-The broker will be available at:
-- **WebSocket**: `ws://localhost:8008` (used by the demo)
-- **PubSub+ Manager (Web UI)**: http://localhost:8080
-  - Username: `admin`
-  - Password: `admin`
-
-**Note**: The broker may take 30-60 seconds to fully start. You can verify it's ready by:
-- Checking the logs: `docker-compose logs -f solace-broker` (look for "Solace PubSub+ broker is up")
-- Accessing the PubSub+ Manager at http://localhost:8080
-- Checking container status: `docker-compose ps` (should show "healthy" or "Up")
-
-### Stop the Broker
-
-```bash
+Stop
 docker-compose down
-```
 
-To remove all data volumes:
-```bash
+Remove volumes:
 docker-compose down -v
 ```
 
-## Installation
-
-### 1. Install Dependencies
-
-Install all dependencies (root and frontend):
+### 2. Install dependencies
 
 ```bash
 npm run install-all
+
+Or:
+npm install && cd frontend && npm install && cd ..
 ```
 
-Or manually:
+### 3. Configure environment
 
-```bash
-# Install root dependencies
-npm install
-
-# Install frontend dependencies
-cd frontend
-npm install
-cd ..
-```
-
-### 2. Configure Environment Variables
-
-Create a `.env` file in the root directory:
+Create a `.env` in the **repository root** (see [Environment variables](#environment-variables) for all keys). Example aligned with this repo’s defaults:
 
 ```env
-# Solace PubSub+ Connection
-# For Docker Compose setup, use these defaults:
 SOLACE_HOST=ws://localhost:8008
 SOLACE_VPN=default
-SOLACE_USERNAME=admin
-SOLACE_PASSWORD=admin
+SOLACE_USERNAME=default
+SOLACE_PASSWORD=default
 
-# WebSocket Server Port (for dashboard communication)
-WS_PORT=8080
+WS_PORT=8081
 
-# Publisher Settings
-PUBLISH_RATE=10                    # Messages per second
-TOPIC_PREFIX=stocks/orders         # Topic prefix for orders
-SYMBOLS=AAPL,GOOGL,MSFT,AMZN,TSLA  # Stock symbols to publish
+PUBLISH_RATE=2
+TOPIC_PREFIX=stocks/orders
+SYMBOLS=AAPL,GOOGL,MSFT,AMZN,TSLA,NVDA,WMT,INTC,META,JPM,NTRS
 
-# Queue Names (optional - defaults shown)
 QUEUE_PARTITIONED=Orders_PQ
-QUEUE_NON_EXCLUSIVE=Orders_EQ
-QUEUE_EXCLUSIVE=Orders_NQ
+QUEUE_NON_EXCLUSIVE=Orders_NQ
+QUEUE_EXCLUSIVE=Orders_EQ
 ```
 
-**Note**: 
-- If using the Docker Compose setup, use `admin`/`admin` for username/password
-- If using a cloud instance or different broker, update the connection details accordingly
-- The `default` VPN is automatically created by the Solace broker
+**Frontend WebSocket URL** must match `WS_PORT`. In `frontend/src/config.js`, `VITE_WS_URL` or the fallback should point at the same host/port (default fallback is `ws://localhost:8081`).
 
-### 3. Configure Frontend WebSocket URL
+### 4. Create queues on the broker
 
-If your WebSocket server runs on a different port, update `frontend/src/config.js`:
+Create these queues (names must match `.env` unless you override):
 
-```javascript
-export const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080'
-```
+| Queue name | Queue type | Partition count | Partition key property | Topic subscription |
+|------------|------------|-----------------|------------------------|--------------------|
+| `Orders_PQ` | Partitioned | 5 | `JMSXGroupID` | `stocks/orders/>` |
+| `Orders_NQ` | Non-exclusive | — | — | `stocks/orders/>` |
+| `Orders_EQ` | Exclusive | — | — | `stocks/orders/>` |
 
-**Important**: Ensure the WebSocket port matches the `WS_PORT` in your `.env` file (default: 8080).
+### 5. Run the app
 
-## Solace Queue Configuration
+The **consumer** process (15 Solace consumers + WebSocket server for the UI) must run in addition to the publisher and frontend.
 
-Before running the demo, create these queues in your Solace PubSub+ broker:
 
-### 1. Orders_PQ (Partitioned Queue)
-
-```
-Queue Name: Orders_PQ
-Queue Type: Partitioned Queue
-Partition Count: 5
-Partition Key Property: JMSXGroupID
-Topic Subscription: stocks/orders/>
-```
-
-**Configuration Details**:
-- Partition key is set via `JMSXGroupID` user property in messages
-- Each symbol (AAPL, GOOGL, MSFT, AMZN, TSLA) maps to a specific partition (0-4)
-- Ensures all messages for the same symbol go to the same partition
-
-### 2. NonExclusiveOrders (Non-Exclusive Queue)
-
-```
-Queue Name: NonExclusiveOrders
-Queue Type: Non-Exclusive Queue
-Topic Subscription: stocks/orders/>
-```
-
-**Configuration Details**:
-- Messages are distributed round-robin across all active consumers
-- All consumers can process messages simultaneously
-
-### 3. ExclusiveOrders (Exclusive Queue)
-
-```
-Queue Name: ExclusiveOrders
-Queue Type: Exclusive Queue
-Topic Subscription: stocks/orders/>
-```
-
-**Configuration Details**:
-- Only one consumer can be active at a time
-- Other consumers remain in standby mode
-- Automatic failover if the active consumer disconnects
-
-## Running the Demo
-
-**Important**: Make sure the Solace broker is running before starting the demo:
-```bash
-docker-compose up -d
-```
-
-Wait for the broker to be healthy (check with `docker-compose ps`), then proceed.
-
-### Option 1: Run All Services Together (Recommended)
-
-Start publisher, consumers, and frontend together:
 
 ```bash
-npm run dev
-```
-
-This will:
-- Start the publisher (publishes stock orders)
-- Start the consumer manager (15 consumers + WebSocket server)
-- Start the frontend dev server (React dashboard)
-
-Then open **http://localhost:3000** in your browser.
-
-### Option 2: Run Services Separately
-
-**Terminal 1 - Start Publisher:**
-```bash
-npm run publisher
-```
-
-**Terminal 2 - Start Consumers:**
-```bash
+# Terminal 1: consumers + WebSocket
 npm run consumer
-```
 
-**Terminal 3 - Start Frontend:**
-```bash
+# Terminal 2: publisher + Vite (see root package.json "dev")
+npm run dev
+
+# Or run all components seperately:
+npm run consumer
+npm run publisher
 npm run frontend
 ```
 
-Then open **http://localhost:3000** in your browser.
+Then open **http://localhost:3000** (Vite port in `frontend/vite.config.js`).
 
-## Using the Dashboard
 
-### Dashboard Features
+### Using the dashboard
 
-1. **Publisher Status Panel**
-   - Shows total messages published
-   - Displays publish rate and topic pattern
+URL: **http://localhost:3000**.
 
-2. **Queue Panels** (one for each queue type)
-   - **Queue Status**: HEALTHY, DEGRADED, or DOWN
-   - **Consumer Status**: Shows how many consumers are up
-   - **Message Count**: Total messages processed per queue type
-   - **Partition State** (Partitioned Queue only): BALANCED or REBALANCING
+![Screenshot2](./resources/screenshot2.png)
 
-3. **Consumer Tiles** (5 per queue)
-   - **Status Indicators**:
-     - 🟢 Active (processing messages)
-     - 🔵 Connected (ready but no messages yet)
-     - ⚪ Standby (exclusive queue - waiting for failover)
-     - ⚫ Offline/Down
-   - **Statistics**: Messages processed, processing rate
-   - **Last Orders**: Shows the last 5 orders received
-   - **Assigned Symbol** (Partitioned Queue): Which stock symbol this partition handles
-   - **Controls**: Disconnect/Reconnect buttons for testing
+**Publisher panel** — publish totals, rate, topic pattern.
 
-### Interactive Demo Scenarios
+**Queue panels** (one per queue type)
 
-#### 1. Observe Partitioned Queue Behavior
+- Queue status (e.g. healthy / degraded / down), consumer counts, message counts  
+- Partitioned queue: partition state (balanced / rebalancing)
 
-- Watch how each consumer consistently receives orders for the same stock symbol
-- Notice the partition assignment: AAPL → Partition 0, GOOGL → Partition 1, etc.
-- Disconnect a consumer and observe rebalancing (status changes to REBALANCING, then BALANCED)
+**Consumer tiles** (5 per queue)
 
-#### 2. Observe Non-Exclusive Queue Behavior
+- Status: active, connected, standby (exclusive), offline  
+- Stats, last orders, assigned symbol (partitioned queue)  
+- Disconnect / reconnect for failover and rebalancing experiments
 
-- All 5 consumers are active simultaneously
-- Messages are distributed across all consumers (round-robin)
-- Each consumer processes different symbols
-- Disconnect a consumer - remaining consumers continue processing
+**Quick experiments**
 
-#### 3. Observe Exclusive Queue Behavior
+1. **Partitioned** — same symbol sticks to one consumer’s partition; disconnect a consumer and watch rebalancing.  
+2. **Non-exclusive** — all consumers active; round-robin style spread.  
+3. **Exclusive** — one active, others standby; fail over by disconnecting the active consumer.  
+4. **Rebalancing** — on the partitioned panel, disconnect a consumer, observe REBALANCING then BALANCED (~5s stabilization), then reconnect.
 
-- Only one consumer is active (typically Consumer 1)
-- Other consumers show "Standby" status
-- Disconnect the active consumer - watch automatic failover to the next consumer
-- Reconnect the original consumer - it becomes standby again
+---
 
-#### 4. Test Rebalancing (Partitioned Queue)
+## Background and Design details
 
-1. Start with all 5 consumers active
-2. Click "Disconnect" on Consumer 2
-3. Watch the partition state change to "REBALANCING"
-4. Observe symbols being reassigned to remaining consumers
-5. After ~5 seconds, state changes to "BALANCED"
-6. Click "Reconnect" on Consumer 2
-7. Watch rebalancing again as the consumer rejoins
+### What this demo illustrates
 
-## Understanding Queue Types
+- **Partitioned queue** — routing by partition key (here, stock symbol): ordering per key, scale-out by partition, rebalance on membership changes.  
+- **Non-exclusive queue** — all consumers compete for messages in parallel; maximum throughput, no per-key ordering story.  
+- **Exclusive queue** — single active consumer, strict ordering across the queue, standby consumers for HA.
 
-### Partitioned Queue
+### Understanding queue types
 
-**Use Case**: When you need guaranteed ordering per partition key (e.g., per customer, per symbol, per account)
+#### Partitioned queue
 
-**Characteristics**:
-- Messages with the same partition key always go to the same partition
-- Ensures ordering within a partition
-- Horizontal scaling - add more partitions for more parallelism
-- Automatic rebalancing when consumers join/leave
+**When it fits** — You need **ordering per key** (customer, symbol, account, …) and can scale with partitions.
 
-**In This Demo**:
-- Stock symbol is used as the partition key
-- Each symbol consistently routes to the same partition
-- Perfect for scenarios where you need to process all orders for a symbol in order
+**Behavior** — Same partition key → same partition; order preserved within a partition; consumers can trigger **rebalance** when they join or leave.
 
-### Non-Exclusive Queue
+**In this demo** — `JMSXGroupID` carries the symbol; symbols map to partitions 0–4 with five partitions.
 
-**Use Case**: Maximum throughput with horizontal scaling, no ordering requirements
+#### Non-exclusive queue
 
-**Characteristics**:
-- All consumers process messages simultaneously
-- Round-robin distribution
-- No ordering guarantees
-- Maximum parallelism
+**When it fits** — **Throughput** matters; ordering across messages is not required.
 
-**In This Demo**:
-- All 5 consumers are active
-- Messages are distributed evenly
-- Best for high-throughput scenarios where order doesn't matter
+**Behavior** — All bound consumers can receive; broker distributes work (e.g. round-robin).
 
-### Exclusive Queue
+**In this demo** — All five consumers are active and share the load.
 
-**Use Case**: Strict ordering across all messages, with high availability
+#### Exclusive queue
 
-**Characteristics**:
-- Only one active consumer at a time
-- Other consumers in standby for failover
-- Guarantees strict ordering
-- Automatic failover if active consumer fails
+**When it fits** — **Single-writer / single active consumer** semantics with failover: one active, others standby.
 
-**In This Demo**:
-- One consumer processes all messages
-- Others wait in standby
-- Perfect for scenarios requiring strict message ordering
+**Behavior** — One consumer delivers at a time; failover when the active client drops.
 
-## Troubleshooting
+**In this demo** — One consumer active, four standby; disconnect the active one to see failover.
 
-### Consumers Not Connecting
-
-1. **Verify Solace Connection**:
-   - Check `.env` file has correct broker details
-   - Test connection: `telnet <broker-host> <port>`
-   - Verify VPN, username, and password are correct
-
-2. **Verify Queues Exist**:
-   - Log into Solace broker management console
-   - Confirm all three queues are created
-   - Verify topic subscriptions are added (`stocks/orders/>`)
-
-3. **Check Queue Types**:
-   - Ensure Orders_PQ is configured as Partitioned Queue
-   - Ensure partition count is 5
-   - Verify JMSXGroupID is set as partition key property
-
-### No Messages Appearing
-
-1. **Check Publisher**:
-   - Verify publisher is running: `npm run publisher`
-   - Check console for publish confirmations
-   - Verify topic pattern matches queue subscriptions
-
-2. **Check Queue Subscriptions**:
-   - Ensure all queues subscribe to `stocks/orders/>`
-   - Verify wildcard subscription is correct
-
-3. **Check Partition Key**:
-   - For partitioned queue, verify JMSXGroupID is being set
-   - Check publisher.js sets partition key correctly
-
-### Frontend Not Updating
-
-1. **WebSocket Connection**:
-   - Check header shows green "Connected" indicator
-   - Verify WebSocket port matches (default: 8080)
-   - Check browser console for WebSocket errors
-
-2. **Port Configuration**:
-   - Ensure `WS_PORT` in `.env` matches `VITE_WS_URL` in frontend config
-   - Default: backend uses 8080, frontend expects 8080
-
-3. **Consumer Backend**:
-   - Verify `npm run consumer` is running
-   - Check console for WebSocket server startup message
-   - Look for "WebSocket server listening on port 8080"
-
-### Partition State Stuck on "UNKNOWN" or "REBALANCING"
-
-- Wait a few seconds - rebalancing detection has a 5-second stabilization period
-- Ensure at least one partitioned queue consumer is connected
-- Check that consumers are receiving messages (messages trigger partition assignment)
-
-## Project Structure
+### Project structure
 
 ```
-partitioned-queue-demo-vite/
+partitioned-queue-demo-node/
 ├── backend/
 │   ├── consumer.js      # Consumer manager + WebSocket server
 │   └── publisher.js     # Stock order publisher
 ├── frontend/
 │   ├── src/
-│   │   ├── App.jsx      # Main dashboard component
-│   │   ├── config.js    # Frontend configuration
+│   │   ├── App.jsx
+│   │   ├── config.js    # WS URL + queue name constants for UI labels
 │   │   └── components/
-│   │       ├── ConsumerTile.jsx    # Individual consumer display
-│   │       ├── Header.jsx          # Dashboard header
-│   │       ├── PublisherStatus.jsx # Publisher stats panel
-│   │       └── QueuePanel.jsx      # Queue type panel
+│   │       ├── ConsumerTile.jsx
+│   │       ├── Header.jsx
+│   │       ├── PublisherStatus.jsx
+│   │       └── QueuePanel.jsx
 │   └── package.json
-├── package.json         # Root package.json with scripts
-└── README.md           # This file
+├── package.json
+└── README.md
 ```
 
-## Key Scripts
+### npm scripts
 
-- `npm run install-all` - Install all dependencies (root + frontend)
-- `npm run publisher` - Start the publisher only
-- `npm run consumer` - Start consumers + WebSocket server
-- `npm run frontend` - Start frontend dev server
-- `npm run dev` - Start all services concurrently
+| Script | Purpose |
+|--------|---------|
+| `npm run install-all` | Install root + frontend dependencies |
+| `npm run publisher` | Publisher only |
+| `npm run consumer` | 15 consumers + WebSocket server |
+| `npm run frontend` | Vite dev server |
+| `npm run dev` | Publisher + frontend (run `consumer` separately) |
 
-## Technology Stack
+### Technology stack
 
-- **Backend**: Node.js, Solace JavaScript API (solclientjs), WebSocket (ws)
-- **Frontend**: React 18, Vite, TailwindCSS, Framer Motion
-- **Message Broker**: Solace PubSub+ Event Broker
-- **Communication**: WebSocket for real-time dashboard updates
+- **Backend** — Node.js, `solclientjs`, `ws`, `dotenv`  
+- **Frontend** — React 18, Vite, Tailwind CSS, Framer Motion  
+- **Broker** — Solace PubSub+ Event Broker  
 
-## Environment Variables Reference
+### Environment variables
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `SOLACE_HOST` | Solace broker WebSocket URL | `ws://localhost:8008` |
-| `SOLACE_VPN` | Solace VPN name | `default` |
-| `SOLACE_USERNAME` | Solace username | `default` |
-| `SOLACE_PASSWORD` | Solace password | `default` |
-| `WS_PORT` | WebSocket server port | `8080` |
-| `PUBLISH_RATE` | Messages per second | `10` |
-| `TOPIC_PREFIX` | Topic prefix for orders | `stocks/orders` |
-| `SYMBOLS` | Comma-separated stock symbols | `AAPL,GOOGL,MSFT,AMZN,TSLA` |
+| Variable | Description | Typical default |
+|----------|-------------|-----------------|
+| `SOLACE_HOST` | Broker WebSocket URL | `ws://localhost:8008` |
+| `SOLACE_VPN` | Message VPN | `default` |
+| `SOLACE_USERNAME` | Client username | `default` |
+| `SOLACE_PASSWORD` | Client password | `default` |
+| `WS_PORT` | WebSocket server for dashboard | `8081` |
+| `PUBLISH_RATE` | Messages per second | `2` |
+| `TOPIC_PREFIX` | Topic prefix | `stocks/orders` |
+| `SYMBOLS` | Comma-separated symbols | (see `.env`) |
 | `QUEUE_PARTITIONED` | Partitioned queue name | `Orders_PQ` |
-| `QUEUE_NON_EXCLUSIVE` | Non-exclusive queue name | `NonExclusiveOrders` |
-| `QUEUE_EXCLUSIVE` | Exclusive queue name | `ExclusiveOrders` |
+| `QUEUE_NON_EXCLUSIVE` | Non-exclusive queue name | `Orders_NQ` |
+| `QUEUE_EXCLUSIVE` | Exclusive queue name | `Orders_EQ` |
+
+Frontend: set `VITE_WS_URL` if the WebSocket is not on the default in `frontend/src/config.js`.
+
+### Troubleshooting
+
+**Consumers not connecting**
+
+- Confirm `.env` host, VPN, user, password.  
+- Ensure all three queues exist and subscribe to `stocks/orders/>`.  
+- Partitioned queue: type partitioned, 5 partitions, partition key **JMSXGroupID**.
+
+**No messages**
+
+- Publisher running; check topic vs subscriptions.  
+- Partitioned path: publisher sets **JMSXGroupID** (see `backend/publisher.js`).
+
+**UI not updating**
+
+- `npm run consumer` must be running (WebSocket server).  
+- Browser / `config.js`: WebSocket URL must match `WS_PORT`.  
+- Header should show connected state.
+
+**Partition state stuck UNKNOWN / REBALANCING**
+
+- Allow ~5s for stabilization.  
+- Ensure at least one partitioned consumer is connected and traffic is flowing.
 
 ## License
 
 MIT
-
