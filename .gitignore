@@ -59,3 +59,4 @@ CLAUDE.md
 package-lock.json
 .claude/**
 private/**
+.dev/**
