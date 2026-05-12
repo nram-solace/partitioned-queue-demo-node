@@ -1,0 +1,53 @@
+version: '3.8'
+
+services:
+  solace-pqdemo:
+    image: solace/solace-pubsub-standard:latest
+    container_name: solace-pqdemo
+    hostname: solace-pqdemo
+    shm_size: 2g
+    ulimits:
+      nofile:
+        soft: 2448
+        hard: 1048576
+    ports:
+      # Management and Admin
+      - "8080:8080"   # PubSub+ Manager (Web UI)
+      - "2222:2222"   # Solace CLI (SSH)
+      
+      # Messaging Protocols
+      - "55333:55555" # SMF (Solace Message Format) - TCP
+      - "8008:8008"   # Web Transport (WebSocket) - Used by the demo
+      - "1883:1883"   # MQTT
+      - "8000:8000"   # MQTT over WebSockets
+      - "5672:5672"   # AMQP
+      - "9000:9000"   # REST Messaging API
+      
+    environment:
+      # Admin credentials for PubSub+ Manager
+      - username_admin_globalaccesslevel=admin
+      - username_admin_password=admin
+      
+      # Create default VPN with admin access
+      #- system_scaling_maxconnectioncount=100
+      #- system_scaling_maxqueuemessagecount=1000
+      
+    volumes:
+      - solace-data:/var/lib/solace
+      - solace-logs:/var/lib/solace/logs
+      
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5550/health-check/guaranteed-messaging || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+      
+    restart: unless-stopped
+
+volumes:
+  solace-data:
+    driver: local
+  solace-logs:
+    driver: local
+
