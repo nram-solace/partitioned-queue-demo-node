@@ -1,37 +1,27 @@
 import { motion } from 'framer-motion'
 
-function Header({ connected, profile, activeView, onViewChange, showPrediction, totalMessages }) {
-  const title = profile?.branding?.appTitle ?? 'Queue types demo'
-  const subtitle =
-    profile?.branding?.subtitle ?? 'Solace PubSub+ Event Broker — connect the consumer to load profile'
-  const count = typeof totalMessages === 'number' ? totalMessages : 0
+function Header({ connected, profile, activeView, onViewChange, showPrediction }) {
+  const primaryTitle = 'Solace Queue Types Demo'
+  const profileTitle = profile?.branding?.appTitle?.trim() || null
 
   return (
     <header className="bg-slate-800 border-b border-slate-700 shadow-lg">
       <div className="container mx-auto px-4 py-6">
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-baseline gap-x-4 gap-y-2 mb-2">
-              <h1 className="text-3xl font-bold text-white">{title}</h1>
-              <div
-                className="flex items-baseline gap-2 rounded-lg bg-slate-900/60 border border-slate-600/80 px-3 py-1.5"
-                title="Total messages published to Solace (publisher counter)"
-              >
-                <span className="text-xs uppercase tracking-wide text-slate-500">Total</span>
-                <span className="text-xl font-mono font-semibold text-emerald-400 tabular-nums">
-                  {count.toLocaleString()}
-                </span>
-                <span className="text-sm text-slate-400">published</span>
-              </div>
-            </div>
-            <p className="text-slate-400">{subtitle}</p>
+            <h1 className="text-3xl font-bold text-white mb-2">{primaryTitle}</h1>
+            {profileTitle ? (
+              <p className="text-lg text-slate-400 font-medium">{profileTitle}</p>
+            ) : (
+              <p className="text-sm text-slate-500">Connect the consumer to load a demo profile…</p>
+            )}
           </div>
           <div className="flex items-center gap-4 flex-wrap">
             {showPrediction && typeof onViewChange === 'function' && (
               <div className="flex bg-slate-700/50 rounded-lg p-1 gap-1">
                 {[
                   { key: 'cards', label: 'Message Flow' },
-                  { key: 'prediction', label: 'Price Prediction' },
+                  { key: 'prediction', label: 'Prediction' },
                 ].map(({ key, label }) => (
                   <button
                     key={key}

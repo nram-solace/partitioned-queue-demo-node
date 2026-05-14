@@ -70,11 +70,6 @@ function App() {
   const [partitionedState, setPartitionedState] = useState('unknown')
   const [nonExclusiveState, setNonExclusiveState] = useState('unknown')
   const [exclusiveState, setExclusiveState] = useState('unknown')
-  const [messageCounts, setMessageCounts] = useState({
-    partitioned: 0,
-    'non-exclusive': 0,
-    exclusive: 0,
-  })
   const [publisherStats, setPublisherStats] = useState({
     publishedCount: 0,
     rate: 0,
@@ -190,12 +185,6 @@ function App() {
 
         if (data.type === 'order') {
           updateConsumer(data)
-          if (data.messageCount) {
-            setMessageCounts((prev) => ({
-              ...prev,
-              [data.queueType]: data.messageCount,
-            }))
-          }
         } else if (data.type === 'prediction') {
           if (data.queueType === 'non-exclusive' && data.consumerNumber !== CANONICAL_NQ_CONSUMER) {
             return
@@ -228,9 +217,6 @@ function App() {
           }
           if (data.exclusiveState) {
             setExclusiveState(data.exclusiveState)
-          }
-          if (data.messageCounts) {
-            setMessageCounts(data.messageCounts)
           }
           if (data.publisherStats) {
             applyPublisherStatsPayload(data.publisherStats)
@@ -418,13 +404,13 @@ function App() {
         activeView={activeView}
         onViewChange={setActiveView}
         showPrediction={showPricePrediction}
-        totalMessages={publisherStats.publishedCount}
       />
 
       {activeView === 'cards' ? (
         <div className="container mx-auto px-4 py-6 space-y-6">
           <PublisherStatus
             totalMessages={publisherStats.publishedCount}
+            topicPrefix={profile?.messaging?.topicPrefix}
             topicName={publisherStats.topicName || topicFallback}
             isLive={publisherStatsLive}
           />
@@ -435,7 +421,6 @@ function App() {
             queueType="partitioned"
             partitionState={partitionState}
             queueState={partitionedState}
-            messageCount={messageCounts.partitioned}
             onDisconnect={handleDisconnect}
             onReconnect={handleReconnect}
             profile={profile}
@@ -446,7 +431,6 @@ function App() {
             consumers={consumers.nonExclusive}
             queueType="non-exclusive"
             queueState={nonExclusiveState}
-            messageCount={messageCounts['non-exclusive']}
             onDisconnect={handleDisconnect}
             onReconnect={handleReconnect}
             profile={profile}
@@ -457,7 +441,6 @@ function App() {
             consumers={consumers.exclusive}
             queueType="exclusive"
             queueState={exclusiveState}
-            messageCount={messageCounts.exclusive}
             onDisconnect={handleDisconnect}
             onReconnect={handleReconnect}
             profile={profile}
