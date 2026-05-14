@@ -6,7 +6,7 @@ import PredictionView from './components/PredictionView'
 import { WS_URL } from './config'
 
 const CANONICAL_NQ_CONSUMER = parseInt(import.meta.env.VITE_NQ_PREDICTION_CONSUMER || '1', 10)
-const HISTORY_LIMIT = 60
+const HISTORY_LIMIT = 100
 
 function deriveQueueNamesFromConsumers(consumers) {
   if (!consumers?.length) return null
@@ -373,6 +373,7 @@ function App() {
         activeView={activeView}
         onViewChange={setActiveView}
         showPrediction={showPricePrediction}
+        totalMessages={publisherStats.publishedCount}
       />
 
       {activeView === 'cards' ? (

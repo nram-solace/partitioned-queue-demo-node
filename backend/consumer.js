@@ -418,11 +418,18 @@ class ConsumerManager {
 }
 
 class PredictionEngine {
-  constructor(alpha = 0.15) {
-    this.alpha = alpha;
+  /**
+   * PQ (partitioned) consumers see the full in-order tape per symbol — use a responsive blend.
+   * NQ consumers see a sparse subset — keep a smoother, slower EMA + VWAP (classic partial-data feel).
+   */
+  constructor(queueType) {
+    this.queueType = queueType;
+    const isPq = queueType === 'partitioned';
+    this.isPq = isPq;
+    this.alpha = isPq ? 0.48 : 0.15;
+    this.maxWindow = 100;
     this.ema = null;
     this.window = [];
-    this.maxWindow = 20;
     this.tradeCount = 0;
   }
 
@@ -442,7 +449,14 @@ class PredictionEngine {
         ? price
         : this.window.reduce((s, t) => s + t.price * t.quantity, 0) / totalQty;
 
-    return parseFloat((0.6 * this.ema + 0.4 * vwap).toFixed(2));
+    let blended;
+    if (this.isPq) {
+      blended = 0.42 * this.ema + 0.33 * vwap + 0.25 * price;
+    } else {
+      blended = 0.6 * this.ema + 0.4 * vwap;
+    }
+
+    return parseFloat(blended.toFixed(2));
   }
 }
 
@@ -600,7 +614,7 @@ class QueueConsumer {
           if (seriesKey != null && typeof price === 'number' && typeof quantity === 'number') {
             let engine = this.predictionEngines.get(seriesKey);
             if (!engine) {
-              engine = new PredictionEngine();
+              engine = new PredictionEngine(this.queueType);
               this.predictionEngines.set(seriesKey, engine);
             }
             const predictedPrice = engine.update(price, quantity);
