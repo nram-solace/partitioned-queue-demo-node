@@ -25,6 +25,7 @@ test('parse and validate profiles/finance.json', () => {
   validateDemoProfile(p);
   assert.equal(p.id, 'finance');
   assert.equal(isPricePredictionEnabled(p), true);
+  assert.equal(p.messaging.partitionKeys.length, 8);
 });
 
 test('invalid profile throws actionable error', () => {
@@ -46,7 +47,7 @@ test('invalid profile throws actionable error', () => {
         messageFields: [{ name: 'symbol', type: 'partitionKey' }],
         ui: { displayFields: [{ field: 'symbol', label: 'S', format: 'text' }] },
       }),
-    /partitionKeys\.length === 5/,
+    /partitionKeys\.length between 3 and 16/,
   );
 });
 
@@ -59,6 +60,8 @@ test('generated message has topic suffix and valid JMSXGroupID index', () => {
     const topic = topicForMessage(p, msg);
     assert.ok(topic.startsWith(`${prefix}/`), `topic should start with "${prefix}/"`);
     const gid = jmsxGroupIdForMessage(p, msg);
-    assert.match(gid, /^[0-4]$/);
+    const maxIdx = p.messaging.partitionKeys.length - 1;
+    assert.match(gid, /^\d+$/);
+    assert.ok(Number(gid) >= 0 && Number(gid) <= maxIdx, `JMSXGroupID index ${gid} out of range 0..${maxIdx}`);
   }
 });
