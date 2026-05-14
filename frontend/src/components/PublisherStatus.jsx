@@ -1,12 +1,13 @@
 function PublisherStatus({ totalMessages, topicName }) {
   const formattedCount = (totalMessages || 0).toLocaleString()
+  const displayTopic = topicName && topicName.trim() ? topicName : '…'
 
   return (
     <div className="bg-slate-800 rounded-lg border-2 border-green-800 p-4">
       <div className="flex items-center justify-between">
         <div>
           <h3 className="text-lg font-semibold">
-            Topic Publisher: {topicName || 'stocks/orders/>'}
+            Topic publisher: {displayTopic}
           </h3>
         </div>
         <div className="text-lg">

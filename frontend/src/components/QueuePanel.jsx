@@ -1,6 +1,6 @@
 import ConsumerTile from './ConsumerTile'
 
-function QueuePanel({ title, description, consumers, queueType, partitionState, queueState, onDisconnect, onReconnect, queueName, messageCount }) {
+function QueuePanel({ title, description, consumers, queueType, partitionState, queueState, onDisconnect, onReconnect, queueName, messageCount, profile }) {
   // Calculate consumer counts
   const connectedConsumers = consumers.filter(c =>
     c.status === 'connected' || c.status === 'active' || c.status === 'standby'
@@ -86,6 +86,7 @@ function QueuePanel({ title, description, consumers, queueType, partitionState, 
             consumerNumber={index + 1}
             onDisconnect={onDisconnect}
             onReconnect={onReconnect}
+            profile={profile}
           />
         ))}
       </div>

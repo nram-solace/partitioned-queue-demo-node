@@ -1,0 +1,54 @@
+{
+  "schemaVersion": 1,
+  "id": "finance",
+  "branding": {
+    "appTitle": "Market data demo",
+    "subtitle": "Solace PubSub+ queue types",
+    "documentTitle": "Queue demo — finance"
+  },
+  "messaging": {
+    "topicPrefix": "solace/demo/stocks/orders",
+    "partitionKeys": ["AAPL", "GOOGL", "MSFT", "AMZN", "TSLA"],
+    "partitionKeyField": "symbol",
+    "topicSuffixFromField": "symbol"
+  },
+  "labels": {
+    "partitionAssignment": "Assigned key"
+  },
+  "messageFields": [
+    { "name": "orderId", "type": "id", "prefix": "ORD-", "width": 8 },
+    { "name": "symbol", "type": "partitionKey" },
+    { "name": "side", "type": "enum", "values": ["BUY", "SELL"] },
+    { "name": "quantity", "type": "int", "min": 100, "max": 1099 },
+    { "name": "orderType", "type": "enum", "values": ["MARKET", "LIMIT"] },
+    {
+      "name": "price",
+      "type": "float",
+      "baselineByPartitionKey": {
+        "AAPL": 182.45,
+        "GOOGL": 142.3,
+        "MSFT": 378.85,
+        "AMZN": 145.2,
+        "TSLA": 248.5
+      },
+      "jitter": 2
+    },
+    { "name": "timestamp", "type": "isoTimestamp" },
+    {
+      "name": "trader",
+      "type": "enum",
+      "values": ["trader_01", "trader_02", "trader_03", "trader_04", "trader_05"]
+    },
+    { "name": "account", "type": "template", "pattern": "ACC-{n:3}", "nMin": 1, "nMax": 100 }
+  ],
+  "ui": {
+    "displayFields": [
+      { "field": "symbol", "label": "Symbol", "format": "text", "prominent": true },
+      { "field": "side", "label": "Side", "format": "badge" },
+      { "field": "price", "label": "Price", "format": "currency", "currency": "USD" },
+      { "field": "quantity", "label": "Qty", "format": "number" },
+      { "field": "orderType", "label": "Type", "format": "text" }
+    ],
+    "colorStrategy": "hashPartitionKey"
+  }
+}

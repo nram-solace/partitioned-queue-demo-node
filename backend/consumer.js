@@ -1,6 +1,14 @@
 const solace = require('solclientjs');
 const WebSocket = require('ws');
-require('dotenv').config();
+const path = require('path');
+require('dotenv').config({ path: path.resolve(__dirname, '..', 'solace.env') });
+
+const {
+  loadDemoProfile,
+  validateDemoProfile,
+  resolveDemoProfilePathFromEnv,
+  warnLegacyEnvIgnoredOnce,
+} = require('./lib/demoProfile');
 
 // Initialize Solace factory
 const factoryProps = new solace.SolclientFactoryProperties();
@@ -9,7 +17,8 @@ solace.SolclientFactory.init(factoryProps);
 solace.SolclientFactory.setLogLevel(solace.LogLevel.WARN);
 
 class ConsumerManager {
-  constructor() {
+  constructor(profile) {
+    this.profile = profile;
     this.consumers = [];
     this.wsServer = null;
     this.clients = new Set();
@@ -31,12 +40,31 @@ class ConsumerManager {
     };
   }
 
+  /** Queue object names from env (same as Solace bindings); sent to the UI so labels match solace.env. */
+  getQueueNames() {
+    return {
+      partitioned: process.env.QUEUE_PARTITIONED || 'Orders_PQ',
+      nonExclusive: process.env.QUEUE_NON_EXCLUSIVE || 'NonExclusiveOrders',
+      exclusive: process.env.QUEUE_EXCLUSIVE || 'ExclusiveOrders',
+    };
+  }
+
   startWebSocketServer(port = process.env.WS_PORT || 8080) {
     this.wsServer = new WebSocket.Server({ port });
 
     this.wsServer.on('connection', (ws) => {
       console.log('📱 Dashboard connected');
       this.clients.add(ws);
+
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(
+          JSON.stringify({
+            type: 'demoProfile',
+            profile: this.profile,
+            queueNames: this.getQueueNames(),
+          }),
+        );
+      }
 
       ws.on('message', (message) => {
         try {
@@ -94,14 +122,15 @@ class ConsumerManager {
         status: c.status,
         messagesProcessed: c.messagesProcessed,
         lastOrders: c.lastOrders,
-        assignedSymbol: c.assignedSymbol
+        assignedPartitionKey: c.assignedPartitionKey
       })),
       partitionState: this.partitionState,
       partitionedState: this.partitionedState,
       nonExclusiveState: this.nonExclusiveState,
       exclusiveState: this.exclusiveState,
       messageCounts: this.messageCounts,
-      publisherStats: this.publisherStats
+      publisherStats: this.publisherStats,
+      queueNames: this.getQueueNames(),
     };
 
     if (client.readyState === WebSocket.OPEN) {
@@ -134,7 +163,7 @@ class ConsumerManager {
 
     const activeConsumers = partitionedConsumers.filter(c => c.status === 'active');
     const connectedConsumers = partitionedConsumers.filter(c => c.status === 'connected' || c.status === 'active');
-    const assignedConsumers = partitionedConsumers.filter(c => c.assignedSymbol !== null);
+    const assignedConsumers = partitionedConsumers.filter(c => c.assignedPartitionKey !== null);
     const downConsumers = partitionedConsumers.filter(c => c.status === 'down' || c.status === 'offline');
 
     // Debug logging
@@ -143,7 +172,7 @@ class ConsumerManager {
       Active: ${activeConsumers.length} (${activeConsumers.map(c => c.consumerNumber).join(',')})
       Connected: ${connectedConsumers.length} (${connectedConsumers.map(c => c.consumerNumber).join(',')})
       Down: ${downConsumers.length} (${downConsumers.map(c => c.consumerNumber).join(',')})
-      Assigned: ${assignedConsumers.length} (${assignedConsumers.map(c => `${c.consumerNumber}:${c.assignedSymbol}`).join(',')})
+      Assigned: ${assignedConsumers.length} (${assignedConsumers.map(c => `${c.consumerNumber}:${c.assignedPartitionKey}`).join(',')})
       Statuses: ${partitionedConsumers.map(c => `${c.consumerNumber}=${c.status}`).join(', ')}`);
 
     // Detect rebalancing by tracking assignment changes
@@ -247,14 +276,14 @@ class ConsumerManager {
 
   detectRebalancing(partitionedConsumers) {
     const connectedConsumers = partitionedConsumers.filter(c => c.status === 'connected' || c.status === 'active');
-    const assignedConsumers = partitionedConsumers.filter(c => c.assignedSymbol !== null);
+    const assignedConsumers = partitionedConsumers.filter(c => c.assignedPartitionKey !== null);
 
     // Build current assignment snapshot (only include connected consumers)
     const currentAssignments = {};
     partitionedConsumers.forEach(c => {
       // Only track assignments for connected/active consumers
       if (c.status === 'connected' || c.status === 'active') {
-        currentAssignments[c.id] = c.assignedSymbol;
+        currentAssignments[c.id] = c.assignedPartitionKey;
       }
     });
 
@@ -332,6 +361,7 @@ class ConsumerManager {
           queue.name,
           queue.type,
           i + 1,
+          this.profile.messaging.partitionKeyField,
           (data) => {
             // Track message counts per queue type
             if (data.type === 'order') {
@@ -381,11 +411,12 @@ class ConsumerManager {
 }
 
 class QueueConsumer {
-  constructor(id, queueName, queueType, consumerNumber, onMessage) {
+  constructor(id, queueName, queueType, consumerNumber, partitionKeyField, onMessage) {
     this.id = id;
     this.queueName = queueName;
     this.queueType = queueType;
     this.consumerNumber = consumerNumber;
+    this.partitionKeyField = partitionKeyField;
     this.onMessage = onMessage;
     this.session = null;
     this.messageConsumer = null;
@@ -393,7 +424,7 @@ class QueueConsumer {
     this.messagesProcessed = 0;
     this.lastOrders = [];
     this.startTime = Date.now();
-    this.assignedSymbol = null; // Track which symbol this partition is handling
+    this.assignedPartitionKey = null;
     this.manualDisconnect = false; // Track if disconnect was manual
   }
 
@@ -505,10 +536,10 @@ class QueueConsumer {
         console.log(`🟢 Consumer ${this.id} (${this.queueName}-${this.consumerNumber}) now active (messages flowing)`);
       }
 
-      // Track assigned symbol for partitioned queues
-      if (this.queueType === 'partitioned' && !this.assignedSymbol) {
-        this.assignedSymbol = orderData.symbol;
-        console.log(`🎯 Consumer ${this.id} (Partition ${this.consumerNumber}) assigned to symbol: ${this.assignedSymbol}`);
+      if (this.queueType === 'partitioned' && !this.assignedPartitionKey) {
+        const pk = orderData[this.partitionKeyField];
+        this.assignedPartitionKey = pk != null ? String(pk) : null;
+        console.log(`🎯 Consumer ${this.id} (Partition ${this.consumerNumber}) assigned to key: ${this.assignedPartitionKey}`);
       }
 
       // Keep last 5 orders
@@ -535,7 +566,7 @@ class QueueConsumer {
           status: this.status
         },
         lastOrders: this.lastOrders,
-        assignedSymbol: this.assignedSymbol
+        assignedPartitionKey: this.assignedPartitionKey
       });
 
       // Acknowledge message
@@ -567,7 +598,7 @@ class QueueConsumer {
 
     // Clear assigned symbol when disconnecting - partitions will be reassigned
     if (this.queueType === 'partitioned') {
-      this.assignedSymbol = null;
+      this.assignedPartitionKey = null;
     }
 
     this.broadcastStatus();
@@ -584,9 +615,28 @@ class QueueConsumer {
   }
 }
 
+function loadConsumerProfile() {
+  const profilePath = resolveDemoProfilePathFromEnv();
+  if (process.env.DEMO_PROFILE) {
+    warnLegacyEnvIgnoredOnce();
+  }
+  const raw = loadDemoProfile(profilePath);
+  const profile = validateDemoProfile(raw);
+  console.log(`📋 Demo profile: ${profile.id} (${path.relative(process.cwd(), profilePath) || profilePath})`);
+  return profile;
+}
+
 // Main execution
 async function main() {
-  const manager = new ConsumerManager();
+  let profile;
+  try {
+    profile = loadConsumerProfile();
+  } catch (e) {
+    console.error('❌ Failed to load demo profile:', e.message);
+    process.exit(1);
+  }
+
+  const manager = new ConsumerManager(profile);
 
   try {
     await manager.start();

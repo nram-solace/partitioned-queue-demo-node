@@ -4,7 +4,12 @@
   "description": "Solace PubSub+ Queue Types Demo - Stock Order Processing",
   "scripts": {
     "publisher": "node backend/publisher.js",
+    "publisher:finance": "cross-env DEMO_PROFILE=./profiles/finance.json node backend/publisher.js",
+    "publisher:retail": "cross-env DEMO_PROFILE=./profiles/retail.json node backend/publisher.js",
     "consumer": "node backend/consumer.js",
+    "consumer:finance": "cross-env DEMO_PROFILE=./profiles/finance.json node backend/consumer.js",
+    "consumer:retail": "cross-env DEMO_PROFILE=./profiles/retail.json node backend/consumer.js",
+    "test": "node --test backend/__tests__/*.test.js",
     "dev": "concurrently \"npm run publisher\" \"npm run frontend\"",
     "frontend": "cd frontend && npm run dev",
     "install-all": "npm install && cd frontend && npm install"
@@ -15,6 +20,7 @@
     "ws": "^8.18.0"
   },
   "devDependencies": {
-    "concurrently": "^8.2.2"
+    "concurrently": "^8.2.2",
+    "cross-env": "^7.0.3"
   }
 }

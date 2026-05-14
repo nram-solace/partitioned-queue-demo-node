@@ -2,24 +2,40 @@ import { useState, useEffect } from 'react'
 import QueuePanel from './components/QueuePanel'
 import Header from './components/Header'
 import PublisherStatus from './components/PublisherStatus'
-import { QUEUE_NAMES, WS_URL } from './config'
+import { WS_URL } from './config'
+
+function deriveQueueNamesFromConsumers(consumers) {
+  if (!consumers?.length) return null
+  const p = consumers.find((c) => c.queueType === 'partitioned')
+  const n = consumers.find((c) => c.queueType === 'non-exclusive')
+  const e = consumers.find((c) => c.queueType === 'exclusive')
+  if (!p || !n || !e) return null
+  return {
+    partitioned: p.queueName,
+    nonExclusive: n.queueName,
+    exclusive: e.queueName,
+  }
+}
 
 function App() {
+  const [profile, setProfile] = useState(null)
+  const [queueNames, setQueueNames] = useState(null)
+
   const [consumers, setConsumers] = useState({
     partitioned: Array(5).fill(null).map((_, i) => ({
       id: i + 1,
-      queueName: QUEUE_NAMES.PARTITIONED,
+      queueName: '',
       queueType: 'partitioned',
       consumerNumber: i + 1,
       status: 'offline',
       messagesProcessed: 0,
       rate: 0,
       lastOrders: [],
-      assignedSymbol: null
+      assignedPartitionKey: null
     })),
     nonExclusive: Array(5).fill(null).map((_, i) => ({
       id: i + 6,
-      queueName: QUEUE_NAMES.NON_EXCLUSIVE,
+      queueName: '',
       queueType: 'non-exclusive',
       consumerNumber: i + 1,
       status: 'offline',
@@ -29,7 +45,7 @@ function App() {
     })),
     exclusive: Array(5).fill(null).map((_, i) => ({
       id: i + 11,
-      queueName: QUEUE_NAMES.EXCLUSIVE,
+      queueName: '',
       queueType: 'exclusive',
       consumerNumber: i + 1,
       status: 'offline',
@@ -40,7 +56,6 @@ function App() {
   })
 
   const [wsConnected, setWsConnected] = useState(false)
-  const [reconnectAttempt, setReconnectAttempt] = useState(0)
   const [partitionState, setPartitionState] = useState('unknown')
   const [partitionedState, setPartitionedState] = useState('unknown')
   const [nonExclusiveState, setNonExclusiveState] = useState('unknown')
@@ -57,6 +72,14 @@ function App() {
   })
 
   useEffect(() => {
+    if (!profile) return
+    const t = profile.branding?.documentTitle || profile.branding?.appTitle
+    if (t) {
+      document.title = t
+    }
+  }, [profile])
+
+  useEffect(() => {
     let ws = null
     let reconnectTimeout = null
 
@@ -66,15 +89,21 @@ function App() {
       ws.onopen = () => {
         console.log('Connected to consumer backend')
         setWsConnected(true)
-        setReconnectAttempt(0) // Reset on successful connection
       }
 
       ws.onmessage = (event) => {
         const data = JSON.parse(event.data)
 
+        if (data.type === 'demoProfile') {
+          setProfile(data.profile)
+          if (data.queueNames) {
+            setQueueNames(data.queueNames)
+          }
+          return
+        }
+
         if (data.type === 'order') {
           updateConsumer(data)
-          // Update message count if provided
           if (data.messageCount) {
             setMessageCounts(prev => ({
               ...prev,
@@ -82,10 +111,14 @@ function App() {
             }))
           }
         } else if (data.type === 'status') {
-          // Handle status updates
           updateConsumerStatus(data)
         } else if (data.type === 'state') {
-          // Initial state sync
+          if (data.queueNames) {
+            setQueueNames(data.queueNames)
+          } else {
+            const derived = deriveQueueNamesFromConsumers(data.consumers)
+            if (derived) setQueueNames(derived)
+          }
           updateConsumersFromState(data.consumers)
           if (data.partitionState) {
             setPartitionState(data.partitionState)
@@ -106,17 +139,14 @@ function App() {
             setPublisherStats(data.publisherStats)
           }
         } else if (data.type === 'publisherStats') {
-          // Real-time publisher stats update
           setPublisherStats({
             publishedCount: data.publishedCount,
             rate: data.rate,
             topicName: data.topicName || ''
           })
         } else if (data.type === 'partitionState') {
-          // Partition state update
           setPartitionState(data.state)
         } else if (data.type === 'queueState') {
-          // Queue state update for all queue types
           if (data.queueType === 'partitioned') {
             setPartitionedState(data.state)
           } else if (data.queueType === 'non-exclusive') {
@@ -135,15 +165,14 @@ function App() {
       ws.onclose = () => {
         console.log('Disconnected from consumer backend')
         setWsConnected(false)
-        // Attempt reconnection after 3 seconds
+        setProfile(null)
+        setQueueNames(null)
         reconnectTimeout = setTimeout(() => {
           console.log('Attempting to reconnect...')
-          setReconnectAttempt(prev => prev + 1)
           connect()
         }, 3000)
       }
 
-      // Store ws reference for disconnect function
       window.wsConnection = ws
     }
 
@@ -174,7 +203,11 @@ function App() {
           messagesProcessed: data.stats.messagesProcessed,
           rate: data.stats.rate,
           lastOrders: data.lastOrders || [],
-          assignedSymbol: data.assignedSymbol || newConsumers[queueKey][index].assignedSymbol
+          ...(data.queueName != null && data.queueName !== ''
+            ? { queueName: data.queueName }
+            : {}),
+          assignedPartitionKey:
+            data.assignedPartitionKey ?? newConsumers[queueKey][index].assignedPartitionKey
         }
       }
 
@@ -192,7 +225,10 @@ function App() {
       if (newConsumers[queueKey][index]) {
         newConsumers[queueKey][index] = {
           ...newConsumers[queueKey][index],
-          status: data.status
+          status: data.status,
+          ...(data.queueName != null && data.queueName !== ''
+            ? { queueName: data.queueName }
+            : {}),
         }
       }
 
@@ -201,7 +237,6 @@ function App() {
   }
 
   const updateConsumersFromState = (stateConsumers) => {
-    // Update consumers from backend state
     setConsumers(prev => {
       const newConsumers = { ...prev }
       stateConsumers.forEach(consumer => {
@@ -209,9 +244,12 @@ function App() {
                          consumer.queueType === 'non-exclusive' ? 'nonExclusive' : 'exclusive'
         const index = consumer.consumerNumber - 1
         if (newConsumers[queueKey][index]) {
+          const { assignedSymbol, ...rest } = consumer
           newConsumers[queueKey][index] = {
             ...newConsumers[queueKey][index],
-            ...consumer
+            ...rest,
+            assignedPartitionKey:
+              rest.assignedPartitionKey ?? assignedSymbol ?? newConsumers[queueKey][index].assignedPartitionKey
           }
         }
       })
@@ -237,18 +275,25 @@ function App() {
     }
   }
 
+  const topicFallback =
+    profile?.messaging?.topicPrefix != null ? `${profile.messaging.topicPrefix}/>` : ''
+
+  const qPart = queueNames?.partitioned ?? '…'
+  const qNonEx = queueNames?.nonExclusive ?? '…'
+  const qEx = queueNames?.exclusive ?? '…'
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100">
-      <Header connected={wsConnected} />
+      <Header connected={wsConnected} profile={profile} />
 
       <div className="container mx-auto px-4 py-6 space-y-6">
         <PublisherStatus
           totalMessages={publisherStats.publishedCount}
-          topicName={publisherStats.topicName}
+          topicName={publisherStats.topicName || topicFallback}
         />
 
         <QueuePanel
-          queueName={QUEUE_NAMES.PARTITIONED}
+          queueName={qPart}
           consumers={consumers.partitioned}
           queueType="partitioned"
           partitionState={partitionState}
@@ -256,26 +301,29 @@ function App() {
           messageCount={messageCounts.partitioned}
           onDisconnect={handleDisconnect}
           onReconnect={handleReconnect}
+          profile={profile}
         />
 
         <QueuePanel
-          queueName={QUEUE_NAMES.NON_EXCLUSIVE}
+          queueName={qNonEx}
           consumers={consumers.nonExclusive}
           queueType="non-exclusive"
           queueState={nonExclusiveState}
           messageCount={messageCounts['non-exclusive']}
           onDisconnect={handleDisconnect}
           onReconnect={handleReconnect}
+          profile={profile}
         />
 
         <QueuePanel
-          queueName={QUEUE_NAMES.EXCLUSIVE}
+          queueName={qEx}
           consumers={consumers.exclusive}
           queueType="exclusive"
           queueState={exclusiveState}
           messageCount={messageCounts.exclusive}
           onDisconnect={handleDisconnect}
           onReconnect={handleReconnect}
+          profile={profile}
         />
       </div>
     </div>

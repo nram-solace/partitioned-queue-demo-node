@@ -1,16 +1,20 @@
 import { motion } from 'framer-motion'
 
-function Header({ connected }) {
+function Header({ connected, profile }) {
+  const title = profile?.branding?.appTitle ?? 'Queue types demo'
+  const subtitle =
+    profile?.branding?.subtitle ?? 'Solace PubSub+ Event Broker — connect the consumer to load profile'
+
   return (
     <header className="bg-slate-800 border-b border-slate-700 shadow-lg">
       <div className="container mx-auto px-4 py-6">
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-3xl font-bold text-white mb-2">
-              Market Data Demo with Solace Queues 
+              {title}
             </h1>
             <p className="text-slate-400">
-              Solace PubSub+ Event Broker - Queue Types Comparison
+              {subtitle}
             </p>
           </div>
           <div className="flex items-center gap-3">

@@ -1,25 +1,82 @@
 import { motion, AnimatePresence } from 'framer-motion'
 
-const symbolColors = {
-  'AAPL': 'text-blue-400 border-blue-500',
-  'GOOGL': 'text-red-400 border-red-500',
-  'MSFT': 'text-green-400 border-green-500',
-  'AMZN': 'text-orange-400 border-orange-500',
-  'TSLA': 'text-purple-400 border-purple-500',
+function hashHue(str) {
+  let h = 0
+  const s = String(str ?? '')
+  for (let i = 0; i < s.length; i++) {
+    h = Math.imul(31, h) + s.charCodeAt(i) | 0
+  }
+  return Math.abs(h) % 360
 }
 
-const symbolBgColors = {
-  'AAPL': 'bg-blue-500/10',
-  'GOOGL': 'bg-red-500/10',
-  'MSFT': 'bg-green-500/10',
-  'AMZN': 'bg-orange-500/10',
-  'TSLA': 'bg-purple-500/10',
+function partitionKeyColors(key) {
+  const hue = hashHue(key)
+  return {
+    text: `hsl(${hue} 70% 72%)`,
+    border: `hsl(${hue} 45% 42%)`,
+    bg: `hsl(${hue} 28% 14%)`,
+    glow: `hsla(${hue} 55% 50% / 0.35)`,
+  }
 }
 
-function ConsumerTile({ consumer, queueType, consumerNumber, onDisconnect, onReconnect }) {
+function formatOrderField(order, spec) {
+  const raw = order?.[spec.field]
+  if (raw === undefined || raw === null) return '—'
+
+  switch (spec.format) {
+    case 'currency': {
+      const cur = spec.currency || 'USD'
+      try {
+        return new Intl.NumberFormat(undefined, { style: 'currency', currency: cur }).format(Number(raw))
+      } catch {
+        return String(raw)
+      }
+    }
+    case 'number':
+      return typeof raw === 'number' ? raw.toLocaleString() : String(raw)
+    case 'badge':
+      return String(raw)
+    default:
+      return String(raw)
+  }
+}
+
+function BadgeRow({ value }) {
+  const v = String(value)
+  const up = v === 'BUY'
+  const down = v === 'SELL'
+  const accent = up ? 'text-green-400' : down ? 'text-red-400' : 'text-slate-200'
+  const arrow = up ? '↑' : down ? '↓' : ''
+
+  return (
+    <div className="flex items-center justify-between mb-2 gap-2">
+      <span className={`text-lg font-semibold px-2 py-0.5 rounded border border-slate-600 bg-slate-800/80 ${accent}`}>
+        {v}
+      </span>
+      {arrow ? <span className={`text-sm ${accent}`}>{arrow}</span> : null}
+    </div>
+  )
+}
+
+function ConsumerTile({ consumer, queueType, consumerNumber, onDisconnect, onReconnect, profile }) {
   const isActive = consumer.status === 'active'
   const isStandby = consumer.status === 'standby'
   const latestOrder = consumer.lastOrders && consumer.lastOrders[0]
+  const profileLoading = !profile
+  const displayFields = profile?.ui?.displayFields
+  const partitionField = profile?.messaging?.partitionKeyField
+  const colorKey =
+    latestOrder && partitionField != null ? latestOrder[partitionField] : consumer.assignedPartitionKey
+  const colors = partitionKeyColors(colorKey || 'default')
+
+  const primarySpec = displayFields?.find((f) => f.prominent) || displayFields?.[0]
+  const currencySpec = displayFields?.find((d) => d.format === 'currency')
+  const showRecent =
+    !profileLoading &&
+    consumer.lastOrders &&
+    consumer.lastOrders.length > 1 &&
+    isActive &&
+    primarySpec
 
   const getStatusIcon = () => {
     if (consumer.status === 'offline') return '⚫'
@@ -47,8 +104,8 @@ function ConsumerTile({ consumer, queueType, consumerNumber, onDisconnect, onRec
       animate={{
         opacity: isStandby ? 0.4 : 1,
         y: 0,
-        boxShadow: isActive && latestOrder
-          ? `0 0 20px ${getGlowColor(latestOrder.symbol)}`
+        boxShadow: isActive && latestOrder && colorKey
+          ? `0 0 20px ${colors.glow}`
           : '0 0 0px transparent'
       }}
       transition={{ duration: 0.3 }}
@@ -58,7 +115,6 @@ function ConsumerTile({ consumer, queueType, consumerNumber, onDisconnect, onRec
         ${isStandby ? 'opacity-50' : ''}
       `}
     >
-      {/* Header */}
       <div className="mb-3 pb-3 border-b border-slate-700">
         <div className="flex items-center justify-between mb-2">
           <h3 className="text-sm font-bold">Consumer {consumerNumber}</h3>
@@ -92,79 +148,101 @@ function ConsumerTile({ consumer, queueType, consumerNumber, onDisconnect, onRec
         </div>
         <div className="flex items-center justify-between">
           <p className="text-xs text-slate-500">{consumer.queueName}</p>
-          {queueType === 'partitioned' && consumer.assignedSymbol && (
-            <span className={`
-              text-xs font-bold px-2 py-0.5 rounded border
-              ${symbolColors[consumer.assignedSymbol] || 'text-slate-400 border-slate-500'}
-              ${symbolBgColors[consumer.assignedSymbol] || 'bg-slate-800'}
-            `}>
-              {consumer.assignedSymbol}
+          {queueType === 'partitioned' && consumer.assignedPartitionKey && (
+            <span
+              className="text-xs font-bold px-2 py-0.5 rounded border"
+              style={{
+                color: partitionKeyColors(consumer.assignedPartitionKey).text,
+                borderColor: partitionKeyColors(consumer.assignedPartitionKey).border,
+                backgroundColor: partitionKeyColors(consumer.assignedPartitionKey).bg,
+              }}
+            >
+              {consumer.assignedPartitionKey}
             </span>
           )}
         </div>
       </div>
 
-      {/* Latest Order */}
       <div className="min-h-[180px] mb-3">
-        <AnimatePresence mode="popLayout">
-          {latestOrder && isActive ? (
-            <motion.div
-              key={latestOrder.orderId}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 20 }}
-              className={`
-                ${symbolBgColors[latestOrder.symbol] || 'bg-slate-800'}
-                rounded-lg p-3 border-l-4
-                ${symbolColors[latestOrder.symbol]?.split(' ')[1] || 'border-slate-500'}
-              `}
-            >
-              <div className="flex items-center justify-between mb-2">
-                <span className={`text-2xl font-bold ${symbolColors[latestOrder.symbol]?.split(' ')[0] || 'text-slate-400'}`}>
-                  {latestOrder.symbol}
-                </span>
-                <span className={`text-sm ${latestOrder.side === 'BUY' ? 'text-green-400' : 'text-red-400'}`}>
-                  {latestOrder.side === 'BUY' ? '↑' : '↓'}
-                </span>
-              </div>
+        {profileLoading ? (
+          <div className="flex items-center justify-center h-full text-slate-500 text-sm">
+            Loading profile…
+          </div>
+        ) : (
+          <AnimatePresence mode="popLayout">
+            {latestOrder && isActive ? (
+              <motion.div
+                key={latestOrder.orderId || latestOrder.cartRef || JSON.stringify(latestOrder)}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+                className="rounded-lg p-3 border-l-4"
+                style={{
+                  borderLeftColor: colors.border,
+                  backgroundColor: colors.bg,
+                }}
+              >
+                {displayFields?.filter((f) => f.prominent).map((spec) => (
+                  <div key={spec.field} className="mb-2">
+                    {spec.format === 'badge' ? (
+                      <BadgeRow value={latestOrder[spec.field]} />
+                    ) : (
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-2xl font-bold" style={{ color: colors.text }}>
+                          {formatOrderField(latestOrder, spec)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                ))}
 
-              <div className="space-y-1 text-xs">
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Price:</span>
-                  <span className="font-semibold">${latestOrder.price}</span>
+                <div className="space-y-1 text-xs mt-2">
+                  {displayFields
+                    ?.filter((f) => !f.prominent)
+                    .map((spec) => (
+                      <div key={spec.field} className="flex justify-between gap-2">
+                        <span className="text-slate-400 shrink-0">{spec.label}:</span>
+                        <span className="font-semibold text-right">
+                          {spec.format === 'badge' ? (
+                            <span className="rounded px-1.5 py-0.5 bg-slate-800 border border-slate-600">
+                              {formatOrderField(latestOrder, spec)}
+                            </span>
+                          ) : (
+                            formatOrderField(latestOrder, spec)
+                          )}
+                        </span>
+                      </div>
+                    ))}
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Qty:</span>
-                  <span className="font-semibold">{latestOrder.quantity}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-slate-400">Type:</span>
-                  <span className="font-semibold">{latestOrder.orderType}</span>
-                </div>
-                <div className="text-slate-500 text-[10px] mt-2">
-                  {new Date(latestOrder.timestamp).toLocaleTimeString()}.
-                  {new Date(latestOrder.timestamp).getMilliseconds().toString().padStart(3, '0')}
-                </div>
-              </div>
-            </motion.div>
-          ) : (
-            <div className="flex items-center justify-center h-full text-slate-600 text-sm">
-              {isStandby ? 'Waiting...' : 'No messages yet'}
-            </div>
-          )}
-        </AnimatePresence>
 
-        {/* Previous Orders */}
-        {consumer.lastOrders && consumer.lastOrders.length > 1 && isActive && (
+                {latestOrder.timestamp && (
+                  <div className="text-slate-500 text-[10px] mt-2">
+                    {new Date(latestOrder.timestamp).toLocaleTimeString()}.
+                    {new Date(latestOrder.timestamp).getMilliseconds().toString().padStart(3, '0')}
+                  </div>
+                )}
+              </motion.div>
+            ) : (
+              <div className="flex items-center justify-center h-full text-slate-600 text-sm">
+                {isStandby ? 'Waiting…' : 'No messages yet'}
+              </div>
+            )}
+          </AnimatePresence>
+        )}
+
+        {showRecent && (
           <div className="mt-3 pt-3 border-t border-slate-700">
             <p className="text-xs text-slate-500 mb-2">Recent:</p>
             <div className="space-y-1">
               {consumer.lastOrders.slice(1, 4).map((order, idx) => (
-                <div key={`${order.orderId}-${idx}`} className="text-xs flex justify-between text-slate-400">
-                  <span className={symbolColors[order.symbol]?.split(' ')[0] || 'text-slate-400'}>
-                    {order.symbol}
+                <div
+                  key={`${String(order[primarySpec.field])}-${idx}`}
+                  className="text-xs flex justify-between text-slate-400 gap-2"
+                >
+                  <span style={{ color: partitionKeyColors(order[primarySpec.field]).text }}>
+                    {formatOrderField(order, primarySpec)}
                   </span>
-                  <span>${order.price}</span>
+                  <span>{currencySpec ? formatOrderField(order, currencySpec) : ''}</span>
                 </div>
               ))}
             </div>
@@ -172,7 +250,6 @@ function ConsumerTile({ consumer, queueType, consumerNumber, onDisconnect, onRec
         )}
       </div>
 
-      {/* Stats */}
       <div className="pt-3 border-t border-slate-700 space-y-1 text-xs">
         <div className="flex justify-between">
           <span className="text-slate-500">📊 Processed:</span>
@@ -185,17 +262,6 @@ function ConsumerTile({ consumer, queueType, consumerNumber, onDisconnect, onRec
       </div>
     </motion.div>
   )
-}
-
-function getGlowColor(symbol) {
-  const colors = {
-    'AAPL': 'rgba(33, 150, 243, 0.3)',
-    'GOOGL': 'rgba(244, 67, 54, 0.3)',
-    'MSFT': 'rgba(76, 175, 80, 0.3)',
-    'AMZN': 'rgba(255, 152, 0, 0.3)',
-    'TSLA': 'rgba(156, 39, 176, 0.3)',
-  }
-  return colors[symbol] || 'rgba(100, 116, 139, 0.3)'
 }
 
 export default ConsumerTile

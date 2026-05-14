@@ -1,0 +1,50 @@
+{
+  "schemaVersion": 1,
+  "id": "retail",
+  "branding": {
+    "appTitle": "Retail fulfillment demo",
+    "subtitle": "Solace PubSub+ queue types",
+    "documentTitle": "Queue demo — retail"
+  },
+  "messaging": {
+    "topicPrefix": "solace/demo/retail/fulfillment",
+    "partitionKeys": ["STORE-EAST", "STORE-WEST", "STORE-NORTH", "STORE-SOUTH", "STORE-DC1"],
+    "partitionKeyField": "storeId",
+    "topicSuffixFromField": "storeId"
+  },
+  "labels": {
+    "partitionAssignment": "Store"
+  },
+  "messageFields": [
+    { "name": "orderId", "type": "id", "prefix": "FUL-", "width": 8 },
+    { "name": "storeId", "type": "partitionKey" },
+    { "name": "channel", "type": "enum", "values": ["WEB", "MOBILE", "POS", "B2B"] },
+    { "name": "units", "type": "int", "min": 1, "max": 48 },
+    { "name": "priority", "type": "enum", "values": ["STANDARD", "EXPRESS"] },
+    {
+      "name": "lineTotal",
+      "type": "float",
+      "baselineByPartitionKey": {
+        "STORE-EAST": 120.0,
+        "STORE-WEST": 95.5,
+        "STORE-NORTH": 210.25,
+        "STORE-SOUTH": 78.0,
+        "STORE-DC1": 450.0
+      },
+      "jitter": 40
+    },
+    { "name": "timestamp", "type": "isoTimestamp" },
+    { "name": "associate", "type": "enum", "values": ["assoc_a", "assoc_b", "assoc_c"] },
+    { "name": "cartRef", "type": "template", "pattern": "CART-{n:4}" }
+  ],
+  "ui": {
+    "displayFields": [
+      { "field": "storeId", "label": "Store", "format": "text", "prominent": true },
+      { "field": "channel", "label": "Channel", "format": "badge" },
+      { "field": "lineTotal", "label": "Line total", "format": "currency", "currency": "USD" },
+      { "field": "units", "label": "Units", "format": "number" },
+      { "field": "priority", "label": "Priority", "format": "text" }
+    ],
+    "colorStrategy": "hashPartitionKey"
+  }
+}
