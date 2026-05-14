@@ -28,13 +28,22 @@ With **`profiles/finance.json`**, the UI can also show a **Prediction** view: pe
 ### Prerequisites
 
 - **Node.js** (v14+)
-- **Docker and Docker Compose** (optional; for local broker)
-- **Solace PubSub+** broker you can manage (create queues and topic subscriptions)
+- **Docker and Docker Compose** (optional; for local broker and automatic queue setup)
+- **Solace PubSub+** broker you can manage (create queues and topic subscriptions), unless you use the bundled Docker flow below
 
 ### 1. Start the broker (Docker)
 
 ```bash
-docker-compose up -d
+docker compose up -d
+```
+
+This starts a Solace container **`solace-pqdemo`** (PubSub+ Standard) and a one-shot **`solace-init`** that waits for SEMP, then creates **`Demo_PQ`**, **`Demo_NQ`**, and **`Demo_EQ`** (if missing) and adds topic subscription **`solace/demo/>`** on each queue.
+
+See **`scripts/setup-solace.sh`** if you need to make any changes to Solace resources.To **re-run** provisioning (for example after changing **`PARTITION_COUNT`** or queue names in compose):
+
+```bash
+docker compose run --rm solace-init
+# or: docker compose up solace-init --force-recreate
 ```
 
 Endpoints (typical local setup):
@@ -42,22 +51,23 @@ Endpoints (typical local setup):
 - **Messaging WebSocket**: `ws://localhost:8008`
 - **PubSub+ Manager**: http://localhost:8080 (`admin` / `admin`)
 
-The broker may take 30–60 seconds to become ready (logs show the broker is up, or Manager loads).
+The broker may take 30–60 seconds to become ready (logs show the broker is up, or Manager loads). **`solace-init`** polls SEMP until the VPN is available, then applies queue and subscription config.
 
 Additional docker commands:
 
 ```bash
 Check process:
-docker-compose ps
+docker compose ps
 
 Check logs:
-docker-compose logs -f solace-pqdemo
+docker compose logs -f solace-pqdemo
+docker compose logs solace-init
 
-Stop
-docker-compose down
+Stop:
+docker compose down
 
 Remove volumes:
-docker-compose down -v
+docker compose down -v
 ```
 
 ### 2. Install dependencies
@@ -100,8 +110,7 @@ QUEUE_NON_EXCLUSIVE=Demo_NQ
 QUEUE_EXCLUSIVE=Demo_EQ
 ```
 
-**Topic subscriptions on the broker** must use the **`messaging.topicPrefix`** from that same profile, with a wildcard: `{topicPrefix}/>`
-`solace/demo/>` subscription should cover all demo topics.
+**Topic subscriptions on the broker** must cover the traffic your profile publishes. With the **Docker** setup above, **`solace/demo/>`** is applied automatically and matches both packaged profiles (`solace/demo/stocks/orders/...`, `solace/demo/retail/...`). On a **broker you manage yourself**, subscribe each queue to **`{messaging.topicPrefix}/>`** from the same JSON as **`DEMO_PROFILE`** (or an equivalent wildcard such as **`solace/demo/>`** if all your topics live under that prefix).
 
 **Frontend WebSocket URL** must match `WS_PORT`. In `frontend/src/config.js`, `VITE_WS_URL` or the fallback should point at the same host/port (default fallback is `ws://localhost:8081`).
 
@@ -115,11 +124,13 @@ Solace **SMF connection**, **VPN**, **credentials**, **queue names**, **WS_PORT*
 
 ### 4. Create queues on the broker
 
-Create these queues (names must match **`demo.env`** unless you override):
+**Using Docker (step 1)** — Queues and **`solace/demo/>`** subscriptions are created by **`solace-init`**; align **`PARTITION_COUNT`** in compose’s **`.env`** with **`messaging.partitionKeys.length`** in the profile you plan to run. Queue names in **`docker-compose.yml`** default to **`Demo_*`** and should match **`QUEUE_*`** in **`demo.env`**.
+
+**Manual or external broker** — Create these queues (names must match **`demo.env`** unless you override):
 
 | Queue name | Queue type | Partition count | Partition key property | Topic subscription |
 |------------|------------|-----------------|------------------------|--------------------|
-| `Demo_PQ` | Partitioned | Same as `partitionKeys.length` in profile (e.g. 8 for `finance.json`, 5 for `retail.json`) | `JMSXGroupID` | `{topicPrefix}/>` from `DEMO_PROFILE` |
+| `Demo_PQ` | Partitioned (non-exclusive queue with `partitionCount` > 0) | Same as `partitionKeys.length` in profile (e.g. 8 for `finance.json`, 5 for `retail.json`) | `JMSXGroupID` | Wildcard covering your profile topics (e.g. `{topicPrefix}/>` or `solace/demo/>`) |
 | `Demo_NQ` | Non-exclusive | — | — | same as partitioned queue |
 | `Demo_EQ` | Exclusive | — | — | same as partitioned queue |
 
@@ -204,7 +215,7 @@ Publisher (Node.js)
     ↓ publishes to topic: {topicPrefix}/{suffix from payload}
     ↓ (with JMSXGroupID = partition index)
     ↓
-Three Queues (all subscribed to {topicPrefix}/> — must match the running profile)
+Three Queues (wildcard subscription covering profile topics — e.g. `{topicPrefix}/>` or `solace/demo/>` from Docker init)
     ├── Demo_PQ (Partitioned Queue) — partition count = partitionKeys.length in profile
     ├── Demo_NQ (Non-Exclusive Queue)
     └── Demo_EQ (Exclusive Queue)
@@ -252,6 +263,9 @@ React Dashboard (Vite + React) — Message Flow; optional Prediction tab (financ
 
 ```
 partitioned-queue-demo-node/
+├── docker-compose.yml         # solace-pqdemo + solace-init (SEMP queue setup)
+├── scripts/
+│   └── setup-solace.sh        # SEMP: Demo_PQ / Demo_NQ / Demo_EQ + solace/demo/>
 ├── backend/
 │   ├── lib/
 │   │   └── demoProfile.js   # load + validate profile; message helpers
@@ -316,6 +330,14 @@ partitioned-queue-demo-node/
 | `QUEUE_EXCLUSIVE` | Exclusive queue name | `Demo_EQ` |
 | `NQ_PREDICTION_CONSUMER` | Non-exclusive consumer number (1–5) whose prediction stream feeds the **Prediction** NQ line; must match the dashboard | `1` |
 
+**Docker Compose** (optional **`.env`** next to **`docker-compose.yml`**, not `demo.env`) — used only by **`solace-init`**:
+
+| Variable | Description | Typical default |
+|----------|-------------|-----------------|
+| `PARTITION_COUNT` | **`Demo_PQ`** `partitionCount` in SEMP; must equal `messaging.partitionKeys.length` for your profile | `8` (finance); use `5` for retail |
+
+Other init settings (**`QUEUE_PQ`**, **`QUEUE_NQ`**, **`QUEUE_EQ`**, **`DEMO_TOPIC_SUB`**, SEMP credentials) are set in **`docker-compose.yml`**; override there if you rename queues or the topic pattern.
+
 **Frontend (Vite)** — optional: `VITE_WS_URL` overrides the WebSocket URL in `frontend/src/config.js`. **`VITE_NQ_PREDICTION_CONSUMER`** must match **`NQ_PREDICTION_CONSUMER`** when using prediction charts (set in the shell or a `frontend/.env.local` for Vite). See comments in `demo.env.example`.
 
 ### Troubleshooting
@@ -323,8 +345,8 @@ partitioned-queue-demo-node/
 **Consumers not connecting**
 
 - Confirm **`demo.env`** host, VPN, user, password.  
-- Ensure all three queues exist and subscribe to **`{topicPrefix}/>`** for your active `DEMO_PROFILE`.  
-- Partitioned queue: type partitioned, **partition count = `partitionKeys.length` in your profile**, partition key **JMSXGroupID**.
+- Ensure all three queues exist and subscribe to a topic wildcard that covers your **`DEMO_PROFILE`** (Docker: **`solace/demo/>`** via **`solace-init`**; otherwise **`{topicPrefix}/>`**).  
+- Partitioned queue: **partition count = `partitionKeys.length` in your profile** (Docker: check **`PARTITION_COUNT`** and re-run **`docker compose run --rm solace-init`** if you switched profiles). Partition key **JMSXGroupID**.
 
 **No messages**
 
