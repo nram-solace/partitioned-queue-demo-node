@@ -43,9 +43,10 @@ function validateDemoProfile(profile) {
   if (!Array.isArray(m.partitionKeys) || m.partitionKeys.length === 0) {
     throw new Error('Demo profile requires non-empty array: messaging.partitionKeys');
   }
-  if (m.partitionKeys.length !== 5) {
+  const pkCount = m.partitionKeys.length;
+  if (pkCount < 3 || pkCount > 16) {
     throw new Error(
-      `Demo profile requires messaging.partitionKeys.length === 5 (got ${m.partitionKeys.length})`,
+      `Demo profile requires messaging.partitionKeys.length between 3 and 16 (got ${pkCount})`,
     );
   }
   if (!m.partitionKeys.every((k) => typeof k === 'string' && k.length > 0)) {

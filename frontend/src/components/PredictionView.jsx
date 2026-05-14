@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { LineChart, Line, ResponsiveContainer, YAxis, Tooltip } from 'recharts'
+import { CUMULATIVE_CLOSENESS_SCALE_MAX_GAP_PERCENT } from '../config'
 
 function LegendItem({ color, label, dashed = false }) {
   return (
@@ -20,24 +21,115 @@ function LegendItem({ color, label, dashed = false }) {
   )
 }
 
-function DeltaBadge({ label, delta }) {
-  const abs = delta === null ? null : Math.abs(delta)
-  const colorClass =
-    abs === null ? 'text-slate-500' : abs < 0.5 ? 'text-emerald-400' : abs < 1.5 ? 'text-yellow-400' : 'text-red-400'
-  const bgClass =
-    abs === null ? 'bg-slate-700/50' : abs < 0.5 ? 'bg-emerald-900/30' : abs < 1.5 ? 'bg-yellow-900/30' : 'bg-red-900/30'
+function PredictionChannelRow({ label, signedDelta, closenessPct, meanGapPct, barColorClass }) {
+  const absDigits =
+    signedDelta == null || !Number.isFinite(signedDelta) ? null : Math.abs(signedDelta).toFixed(2)
+
+  const numColorClass =
+    signedDelta == null || !Number.isFinite(signedDelta)
+      ? 'text-slate-500'
+      : signedDelta > 0.0001
+        ? 'text-sky-400'
+        : signedDelta < -0.0001
+          ? 'text-red-400'
+          : 'text-slate-400'
+
+  const barW =
+    closenessPct != null && Number.isFinite(closenessPct)
+      ? Math.min(100, Math.max(0, closenessPct))
+      : 0
+
+  const cap = CUMULATIVE_CLOSENESS_SCALE_MAX_GAP_PERCENT
+  const atClosenessScaleFloor =
+    closenessPct != null &&
+    Number.isFinite(closenessPct) &&
+    ((meanGapPct != null && Number.isFinite(meanGapPct) && meanGapPct >= cap - 1e-9) || closenessPct <= 1e-6)
+
+  const closenessLabel =
+    closenessPct == null || !Number.isFinite(closenessPct)
+      ? '—'
+      : atClosenessScaleFloor
+        ? 'NA'
+        : `${closenessPct.toFixed(0)}%`
+
+  const barTitle =
+    meanGapPct != null && Number.isFinite(meanGapPct)
+      ? atClosenessScaleFloor
+        ? `Mean |Δ| over prediction updates: ${meanGapPct.toFixed(2)}% of price (≥ ${cap}% scale max). Closeness shown as NA — not “zero match”; the bar is empty because this average is past the top of the 0–100 meter.`
+        : `Mean |Δ| over prediction updates: ${meanGapPct.toFixed(2)}% of price (since connect). Closeness ${Math.round(barW)}% — 100 = avg gap ~0; at or above ${cap}% mean gap we show NA instead of 0%.`
+      : 'No prediction updates yet, or waiting for last published price.'
 
   return (
-    <div className={`flex items-center gap-1.5 px-3 py-1 rounded-lg ${bgClass}`}>
-      <span className="text-xs font-medium text-slate-400">{label}</span>
-      <span className={`text-sm font-mono font-semibold ${colorClass}`}>
-        {delta === null ? '—' : `${delta >= 0 ? '+' : ''}${delta.toFixed(2)}%`}
+    <div className="contents">
+      <span className="text-xs font-semibold text-slate-400">{label}</span>
+      <span
+        className={`text-base font-mono font-semibold tabular-nums inline-flex items-baseline justify-start gap-0.5 ${numColorClass}`}
+        title={
+          signedDelta == null
+            ? ''
+            : signedDelta > 0
+              ? 'Prediction above last published price (|Δ| as % of last price)'
+              : signedDelta < 0
+                ? 'Prediction below last published price (|Δ| as % of last price)'
+                : ''
+        }
+        aria-label={
+          absDigits == null
+            ? undefined
+            : `Absolute delta ${absDigits} percent versus last published price`
+        }
+      >
+        <span className="text-[10px] text-slate-500 font-sans font-normal leading-none" aria-hidden>
+          Δ
+        </span>
+        {absDigits == null ? (
+          <span className="text-slate-500">—</span>
+        ) : (
+          <span>{absDigits}</span>
+        )}
+      </span>
+      <span
+        className="inline-flex items-baseline justify-center gap-0.5 text-xs text-slate-500 shrink-0 w-8 select-none font-serif"
+        title={barTitle}
+        aria-label="Mean |Δ| over prediction updates (μ), mapped to closeness (≈)"
+      >
+        <span aria-hidden>μ</span>
+        <span className="text-[10px] text-slate-600 font-sans leading-none" aria-hidden>
+          ≈
+        </span>
+      </span>
+      <div className="min-w-0 flex items-center" title={barTitle}>
+        <div
+          className="w-full h-2.5 rounded-full bg-slate-700/90 overflow-hidden"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={atClosenessScaleFloor ? 0 : Math.round(barW)}
+          aria-valuetext={
+            atClosenessScaleFloor
+              ? `${label} closeness not on 0 to 100 scale, mean gap ${meanGapPct != null && Number.isFinite(meanGapPct) ? `${meanGapPct.toFixed(2)} percent` : 'unknown'}`
+              : `${label} closeness ${Math.round(barW)} percent, mean gap ${meanGapPct != null && Number.isFinite(meanGapPct) ? `${meanGapPct.toFixed(2)} percent` : 'unknown'}`
+          }
+          aria-label={
+            atClosenessScaleFloor
+              ? `${label} closeness not on scale, mean gap over prediction updates ${meanGapPct != null && Number.isFinite(meanGapPct) ? `${meanGapPct.toFixed(2)} percent` : 'unknown'}`
+              : `${label} closeness ${Math.round(barW)} percent, mean gap over prediction updates ${meanGapPct != null && Number.isFinite(meanGapPct) ? `${meanGapPct.toFixed(2)} percent` : 'unknown'}`
+          }
+        >
+          <div
+            className={`h-full rounded-full transition-[width] duration-300 ease-out ${barColorClass}`}
+            style={{ width: `${barW}%` }}
+          />
+        </div>
+      </div>
+      <span className="text-[11px] font-mono text-slate-400 text-right tabular-nums min-w-[1.75rem]">
+        {closenessLabel}
       </span>
     </div>
   )
 }
 
-function PredictionCard({ symbol, priceHistory, latestActual, latestPredictions }) {
+function PredictionCard({ symbol, priceHistory, latestActual, latestPredictions, cumulativeStats }) {
   const history = priceHistory[symbol] || []
   const actual = latestActual[symbol]
   const pqPred = latestPredictions[symbol]?.pq
@@ -107,9 +199,21 @@ function PredictionCard({ symbol, priceHistory, latestActual, latestPredictions 
         )}
       </div>
 
-      <div className="flex gap-2">
-        <DeltaBadge label="PQ" delta={pqDelta} />
-        <DeltaBadge label="NQ" delta={nqDelta} />
+      <div className="mt-4 pt-3 border-t border-slate-700/80 grid grid-cols-[minmax(1.75rem,2.25rem)_minmax(4rem,5rem)_minmax(1.75rem,2rem)_1fr_minmax(2.25rem,2.75rem)] gap-x-2 gap-y-2.5 items-center">
+        <PredictionChannelRow
+          label="PQ"
+          signedDelta={pqDelta}
+          closenessPct={cumulativeStats?.pqClosenessPct}
+          meanGapPct={cumulativeStats?.pqMeanGapPct}
+          barColorClass="bg-indigo-500"
+        />
+        <PredictionChannelRow
+          label="NQ"
+          signedDelta={nqDelta}
+          closenessPct={cumulativeStats?.nqClosenessPct}
+          meanGapPct={cumulativeStats?.nqMeanGapPct}
+          barColorClass="bg-orange-500"
+        />
       </div>
     </div>
   )
@@ -121,6 +225,7 @@ export default function PredictionView({
   priceHistory,
   latestActual,
   latestPredictions,
+  symbolCumulativeTrackStats = {},
 }) {
   const [helpOpen, setHelpOpen] = useState(false)
 
@@ -182,6 +287,22 @@ export default function PredictionView({
               <strong>consumer {canonicalNqConsumer}</strong> only, with a smoother estimator trained on roughly 1/N of
               each symbol&apos;s trades (not an average of all NQ instances).
             </p>
+            <p className="text-slate-500 text-xs leading-relaxed mt-4 border-t border-slate-600 pt-3">
+              <strong>Tile rows (PQ / NQ):</strong> each row is{' '}
+              <strong className="text-slate-400">channel</strong> · <strong className="text-slate-400">Δ value</strong>{' '}
+              · <strong className="text-slate-400">μ≈</strong> (mean |Δ| over <strong>prediction updates</strong>, then{' '}
+              <strong>mapped</strong> closeness) · <strong className="text-slate-400">bar</strong> ·{' '}
+              <strong className="text-slate-400">%</strong>. The <strong>Δ value</strong> is the latest gap as a percent
+              of last published price (prediction minus actual), with <span className="text-sky-300">blue</span> when
+              above and <span className="text-red-300">red</span> when below. The <strong>μ≈</strong> label and{' '}
+              <strong>bar + %</strong> are <strong>session closeness</strong>: each time a PQ or NQ prediction is
+              emitted, we compare it to the <strong>last published actual</strong> for that symbol, record |Δ|, and
+              keep a <strong>cumulative mean</strong> of those gaps. We do <strong>not</strong> add a sample on every
+              publisher tick (that would count the same stale NQ against a moving price thousands of times). Map
+              0–100 so <strong>100 ≈ average gap ~0</strong> and when the mean reaches or passes the scale max (
+              {CUMULATIVE_CLOSENESS_SCALE_MAX_GAP_PERCENT}%) we show <strong>NA</strong> instead of “0%” so it is not
+              read as “zero accuracy.” Hover the bar or μ≈ for the numeric mean.
+            </p>
           </div>
         </div>
       )}
@@ -194,6 +315,7 @@ export default function PredictionView({
             priceHistory={priceHistory}
             latestActual={latestActual}
             latestPredictions={latestPredictions}
+            cumulativeStats={symbolCumulativeTrackStats[symbol]}
           />
         ))}
       </div>

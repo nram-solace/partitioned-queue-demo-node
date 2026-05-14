@@ -3,7 +3,7 @@ import QueuePanel from './components/QueuePanel'
 import Header from './components/Header'
 import PublisherStatus from './components/PublisherStatus'
 import PredictionView from './components/PredictionView'
-import { WS_URL } from './config'
+import { closenessPctFromMeanGap, WS_URL } from './config'
 
 const CANONICAL_NQ_CONSUMER = parseInt(import.meta.env.VITE_NQ_PREDICTION_CONSUMER || '1', 10)
 const HISTORY_LIMIT = 100
@@ -86,6 +86,16 @@ function App() {
   const [latestPredictions, setLatestPredictions] = useState({})
   const [priceHistory, setPriceHistory] = useState({})
   const predictionsRef = useRef({})
+  const lastRollingPublisherCountRef = useRef(-1)
+  /** Mirrors latest publisher `actualPrices` for pairing with prediction WS messages. */
+  const latestActualRef = useRef({})
+  /**
+   * Per symbol, per channel: cumulative sum of |Δ|% and sample count since connect.
+   * One sample per **prediction** message (paired with last published actual) — not per publisher tick, so a
+   * stale NQ value is not penalized thousands of times while the tape moves.
+   */
+  const predictionGapCumulativeRef = useRef({})
+  const [symbolCumulativeTrackStats, setSymbolCumulativeTrackStats] = useState({})
 
   useEffect(() => {
     if (!profile) return
@@ -112,7 +122,16 @@ function App() {
           : {}),
       })
       if (data.actualPrices && typeof data.actualPrices === 'object') {
+        const pc = data.publishedCount
+        if (typeof pc === 'number' && pc === lastRollingPublisherCountRef.current) {
+          return
+        }
+        if (typeof pc === 'number') {
+          lastRollingPublisherCountRef.current = pc
+        }
+
         setLatestActual(data.actualPrices)
+        latestActualRef.current = { ...data.actualPrices }
         const timestamp = Date.now()
         setPriceHistory((prev) => {
           const next = { ...prev }
@@ -131,6 +150,37 @@ function App() {
           return next
         })
       }
+    }
+
+    const recomputeSymbolCumulativeTrackStats = () => {
+      const cum = predictionGapCumulativeRef.current
+      const nextCumulative = {}
+      for (const sym of Object.keys(cum)) {
+        const { pq, nq } = cum[sym]
+        const pqMean = pq.n > 0 ? pq.sum / pq.n : null
+        const nqMean = nq.n > 0 ? nq.sum / nq.n : null
+        nextCumulative[sym] = {
+          pqClosenessPct: closenessPctFromMeanGap(pqMean),
+          nqClosenessPct: closenessPctFromMeanGap(nqMean),
+          pqMeanGapPct: pqMean,
+          nqMeanGapPct: nqMean,
+        }
+      }
+      setSymbolCumulativeTrackStats(nextCumulative)
+    }
+
+    const recordPredictionGapSample = (symbol, field, predictedPrice) => {
+      const actual = latestActualRef.current[symbol]
+      if (!(actual > 0) || predictedPrice == null || !Number.isFinite(predictedPrice)) return
+      const g = Math.abs((predictedPrice - actual) / actual) * 100
+      const cum = predictionGapCumulativeRef.current
+      if (!cum[symbol]) {
+        cum[symbol] = { pq: { sum: 0, n: 0 }, nq: { sum: 0, n: 0 } }
+      }
+      const slot = field === 'pq' ? 'pq' : 'nq'
+      cum[symbol][slot].sum += g
+      cum[symbol][slot].n += 1
+      recomputeSymbolCumulativeTrackStats()
     }
 
     const connect = () => {
@@ -171,6 +221,7 @@ function App() {
             ...prev,
             [data.symbol]: { ...prev[data.symbol], [field]: data.predictedPrice },
           }))
+          recordPredictionGapSample(data.symbol, field, data.predictedPrice)
         } else if (data.type === 'status') {
           updateConsumerStatus(data)
         } else if (data.type === 'state') {
@@ -225,9 +276,13 @@ function App() {
         setProfile(null)
         setQueueNames(null)
         predictionsRef.current = {}
+        predictionGapCumulativeRef.current = {}
+        latestActualRef.current = {}
+        lastRollingPublisherCountRef.current = -1
         setLatestActual({})
         setLatestPredictions({})
         setPriceHistory({})
+        setSymbolCumulativeTrackStats({})
         setActiveView('cards')
         reconnectTimeout = setTimeout(() => {
           console.log('Attempting to reconnect...')
@@ -424,6 +479,7 @@ function App() {
           priceHistory={priceHistory}
           latestActual={latestActual}
           latestPredictions={latestPredictions}
+          symbolCumulativeTrackStats={symbolCumulativeTrackStats}
         />
       )}
     </div>
