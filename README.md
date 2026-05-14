@@ -119,9 +119,9 @@ Create these queues (names must match **`demo.env`** unless you override):
 
 | Queue name | Queue type | Partition count | Partition key property | Topic subscription |
 |------------|------------|-----------------|------------------------|--------------------|
-| `Orders_PQ` | Partitioned | Same as `partitionKeys.length` in profile (e.g. 8 for `finance.json`, 5 for `retail.json`) | `JMSXGroupID` | `{topicPrefix}/>` from `DEMO_PROFILE` |
-| `Orders_NQ` | Non-exclusive | — | — | same as partitioned queue |
-| `Orders_EQ` | Exclusive | — | — | same as partitioned queue |
+| `Demo_PQ` | Partitioned | Same as `partitionKeys.length` in profile (e.g. 8 for `finance.json`, 5 for `retail.json`) | `JMSXGroupID` | `{topicPrefix}/>` from `DEMO_PROFILE` |
+| `Demo_NQ` | Non-exclusive | — | — | same as partitioned queue |
+| `Demo_EQ` | Exclusive | — | — | same as partitioned queue |
 
 ### 5. Run the app
 
@@ -205,9 +205,9 @@ Publisher (Node.js)
     ↓ (with JMSXGroupID = partition index)
     ↓
 Three Queues (all subscribed to {topicPrefix}/> — must match the running profile)
-    ├── Orders_PQ (Partitioned Queue) — partition count = partitionKeys.length in profile
-    ├── Orders_NQ (Non-Exclusive Queue)
-    └── Orders_EQ (Exclusive Queue)
+    ├── Demo_PQ (Partitioned Queue) — partition count = partitionKeys.length in profile
+    ├── Demo_NQ (Non-Exclusive Queue)
+    └── Demo_EQ (Exclusive Queue)
     ↓
 15 Consumers (5 per queue type) — if finance + pricePrediction: each consumer can emit prediction hints
     ↓ WebSocket: state, orders, publisherStats, prediction (finance), demoProfile
@@ -311,9 +311,9 @@ partitioned-queue-demo-node/
 | `PUBLISH_RATE` | Messages per second | `2` |
 | `TOPIC_PREFIX` | *(Deprecated when `DEMO_PROFILE` is set.)* Ignored; topic prefix comes from the profile | — |
 | `SYMBOLS` | *(Deprecated when `DEMO_PROFILE` is set.)* Ignored | — |
-| `QUEUE_PARTITIONED` | Partitioned queue name | `Orders_PQ` |
-| `QUEUE_NON_EXCLUSIVE` | Non-exclusive queue name | `Orders_NQ` |
-| `QUEUE_EXCLUSIVE` | Exclusive queue name | `Orders_EQ` |
+| `QUEUE_PARTITIONED` | Partitioned queue name | `Demo_PQ` |
+| `QUEUE_NON_EXCLUSIVE` | Non-exclusive queue name | `Demo_NQ` |
+| `QUEUE_EXCLUSIVE` | Exclusive queue name | `Demo_EQ` |
 | `NQ_PREDICTION_CONSUMER` | Non-exclusive consumer number (1–5) whose prediction stream feeds the **Prediction** NQ line; must match the dashboard | `1` |
 
 **Frontend (Vite)** — optional: `VITE_WS_URL` overrides the WebSocket URL in `frontend/src/config.js`. **`VITE_NQ_PREDICTION_CONSUMER`** must match **`NQ_PREDICTION_CONSUMER`** when using prediction charts (set in the shell or a `frontend/.env.local` for Vite). See comments in `demo.env.example`.
