@@ -11,7 +11,7 @@
   },
   "messaging": {
     "topicPrefix": "solace/demo/stocks/orders",
-    "partitionKeys": ["AAPL", "GOOGL", "MSFT", "AMZN", "TSLA"],
+    "partitionKeys": ["AAPL", "GOOGL", "MSFT", "AMZN", "TSLA", "NVDA", "META", "IBM"],
     "partitionKeyField": "symbol",
     "topicSuffixFromField": "symbol"
   },
@@ -32,14 +32,20 @@
         "GOOGL": 142.3,
         "MSFT": 378.85,
         "AMZN": 145.2,
-        "TSLA": 248.5
+        "TSLA": 248.5,
+        "NVDA": 128.75,
+        "META": 528.4,
+        "IBM": 194.2
       },
       "volatilityByPartitionKey": {
         "AAPL": 0.003,
         "GOOGL": 0.004,
         "MSFT": 0.0025,
         "AMZN": 0.0045,
-        "TSLA": 0.007
+        "TSLA": 0.007,
+        "NVDA": 0.006,
+        "META": 0.004,
+        "IBM": 0.0025
       },
       "jitter": 2
     },
