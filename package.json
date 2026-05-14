@@ -15,8 +15,8 @@
     "install-all": "npm install && cd frontend && npm install"
   },
   "dependencies": {
-    "solclientjs": "^10.18.2",
     "dotenv": "^16.4.5",
+    "solclientjs": "^10.18.2",
     "ws": "^8.18.0"
   },
   "devDependencies": {

@@ -37,7 +37,8 @@ class ConsumerManager {
     this.publisherStats = {
       publishedCount: 0,
       rate: 0,
-      topicName: ''
+      topicName: '',
+      publishedCountBySymbol: {},
     };
   }
 
@@ -82,6 +83,9 @@ class ConsumerManager {
               topicName: data.topicName || '',
               ...(data.actualPrices && typeof data.actualPrices === 'object'
                 ? { actualPrices: data.actualPrices }
+                : {}),
+              ...(data.publishedCountBySymbol && typeof data.publishedCountBySymbol === 'object'
+                ? { publishedCountBySymbol: { ...data.publishedCountBySymbol } }
                 : {}),
             };
             this.broadcast({
@@ -612,10 +616,11 @@ class QueueConsumer {
           const price = orderData.price;
           const quantity = orderData.quantity;
           if (seriesKey != null && typeof price === 'number' && typeof quantity === 'number') {
-            let engine = this.predictionEngines.get(seriesKey);
+            const key = String(seriesKey);
+            let engine = this.predictionEngines.get(key);
             if (!engine) {
               engine = new PredictionEngine(this.queueType);
-              this.predictionEngines.set(seriesKey, engine);
+              this.predictionEngines.set(key, engine);
             }
             const predictedPrice = engine.update(price, quantity);
             this.onMessage({
@@ -623,8 +628,10 @@ class QueueConsumer {
               consumerId: this.id,
               queueType: this.queueType,
               consumerNumber: this.consumerNumber,
-              symbol: seriesKey,
+              symbol: key,
               predictedPrice,
+              /** Same tick as the engine input; dashboard uses this for gap μ (avoids stale 1 Hz actual). */
+              tradePrice: price,
               tradesUsed: engine.tradeCount,
             });
           }

@@ -1,6 +1,40 @@
 import { useState, useEffect } from 'react'
 import { LineChart, Line, ResponsiveContainer, YAxis, Tooltip } from 'recharts'
-import { CUMULATIVE_CLOSENESS_SCALE_MAX_GAP_PERCENT } from '../config'
+import {
+  CHART_ACCURACY_GAP_WINDOW,
+  CHART_ACCURACY_SHARED_MAX_GAP_PERCENT,
+  closenessPctFromMeanGap,
+  MIN_SAMPLES_FOR_CLOSENESS_METRIC,
+} from '../config'
+
+/**
+ * Mean |pred − actual| / actual over recent chart points (same rows the lines use), so the bar tracks the graph.
+ */
+function chartChannelGapStats(history, channel, windowSize, minSamples, scaleMaxGapPercent) {
+  const gaps = []
+  for (const p of history) {
+    const actual = p.actual
+    const pred = p[channel]
+    if (actual == null || !Number.isFinite(actual) || actual <= 0) continue
+    if (pred == null || !Number.isFinite(pred)) continue
+    gaps.push(Math.abs((pred - actual) / actual) * 100)
+  }
+  const slice = gaps.slice(-windowSize)
+  const n = slice.length
+  if (n < minSamples) {
+    return {
+      closenessPct: null,
+      meanGapPct: null,
+      sampleCount: n,
+    }
+  }
+  const mean = slice.reduce((a, b) => a + b, 0) / n
+  return {
+    closenessPct: closenessPctFromMeanGap(mean, scaleMaxGapPercent),
+    meanGapPct: mean,
+    sampleCount: n,
+  }
+}
 
 function LegendItem({ color, label, dashed = false }) {
   return (
@@ -13,7 +47,7 @@ function LegendItem({ color, label, dashed = false }) {
           y2="2"
           stroke={color}
           strokeWidth="2"
-          strokeDasharray={dashed ? '5 3' : undefined}
+          strokeDasharray={dashed ? '4 3' : undefined}
         />
       </svg>
       <span className="text-xs text-slate-400">{label}</span>
@@ -21,7 +55,16 @@ function LegendItem({ color, label, dashed = false }) {
   )
 }
 
-function PredictionChannelRow({ label, signedDelta, closenessPct, meanGapPct, barColorClass }) {
+function PredictionChannelRow({
+  label,
+  signedDelta,
+  closenessPct,
+  meanGapPct,
+  barColorClass,
+  sampleCount = 0,
+  minSamples = MIN_SAMPLES_FOR_CLOSENESS_METRIC,
+  scaleMaxGapPercent = CHART_ACCURACY_SHARED_MAX_GAP_PERCENT,
+}) {
   const absDigits =
     signedDelta == null || !Number.isFinite(signedDelta) ? null : Math.abs(signedDelta).toFixed(2)
 
@@ -34,30 +77,37 @@ function PredictionChannelRow({ label, signedDelta, closenessPct, meanGapPct, ba
           ? 'text-red-400'
           : 'text-slate-400'
 
+  const insufficientSamples = sampleCount < minSamples
+
   const barW =
-    closenessPct != null && Number.isFinite(closenessPct)
+    !insufficientSamples && closenessPct != null && Number.isFinite(closenessPct)
       ? Math.min(100, Math.max(0, closenessPct))
       : 0
 
-  const cap = CUMULATIVE_CLOSENESS_SCALE_MAX_GAP_PERCENT
+  const cap = scaleMaxGapPercent
+  /** NA only when mean gap is at/above this row’s scale max (then closeness is 0 and bar is empty). */
   const atClosenessScaleFloor =
-    closenessPct != null &&
-    Number.isFinite(closenessPct) &&
-    ((meanGapPct != null && Number.isFinite(meanGapPct) && meanGapPct >= cap - 1e-9) || closenessPct <= 1e-6)
+    !insufficientSamples &&
+    meanGapPct != null &&
+    Number.isFinite(meanGapPct) &&
+    meanGapPct >= cap - 1e-9
 
   const closenessLabel =
-    closenessPct == null || !Number.isFinite(closenessPct)
+    insufficientSamples
       ? '—'
-      : atClosenessScaleFloor
-        ? 'NA'
-        : `${closenessPct.toFixed(0)}%`
+      : closenessPct == null || !Number.isFinite(closenessPct)
+        ? '—'
+        : atClosenessScaleFloor
+          ? 'NA'
+          : `${closenessPct.toFixed(0)}%`
 
-  const barTitle =
-    meanGapPct != null && Number.isFinite(meanGapPct)
+  const barTitle = insufficientSamples
+    ? `${label}: ${sampleCount}/${minSamples} chart points with both actual and ${label} — bar appears once the visible window has enough overlapping samples.`
+    : meanGapPct != null && Number.isFinite(meanGapPct)
       ? atClosenessScaleFloor
-        ? `Mean |Δ| over prediction updates: ${meanGapPct.toFixed(2)}% of price (≥ ${cap}% scale max). Closeness shown as NA — not “zero match”; the bar is empty because this average is past the top of the 0–100 meter.`
-        : `Mean |Δ| over prediction updates: ${meanGapPct.toFixed(2)}% of price (since connect). Closeness ${Math.round(barW)}% — 100 = avg gap ~0; at or above ${cap}% mean gap we show NA instead of 0%.`
-      : 'No prediction updates yet, or waiting for last published price.'
+        ? `Mean |Δ| on the chart (recent window): ${meanGapPct.toFixed(2)}% of price (≥ ${cap}% scale max). NA means the bar is off-scale, not “zero match.” Last ${sampleCount} chart sample(s), max ${CHART_ACCURACY_GAP_WINDOW}; total messages do not affect this.`
+        : `Mean |Δ| on the chart (recent window): ${meanGapPct.toFixed(2)}% of price. Closeness ${Math.round(barW)}% — 100 ≈ avg gap ~0; at or above ${cap}% mean gap we show NA instead of 0%. Based on last ${sampleCount} chart sample(s), max ${CHART_ACCURACY_GAP_WINDOW}; total published messages do not affect this.`
+      : 'No overlapping actual + prediction samples in the chart window yet.'
 
   return (
     <div className="contents">
@@ -91,7 +141,7 @@ function PredictionChannelRow({ label, signedDelta, closenessPct, meanGapPct, ba
       <span
         className="inline-flex items-baseline justify-center gap-0.5 text-xs text-slate-500 shrink-0 w-8 select-none font-serif"
         title={barTitle}
-        aria-label="Mean |Δ| over prediction updates (μ), mapped to closeness (≈)"
+        aria-label="Mean chart |Δ| (μ), mapped to closeness (≈)"
       >
         <span aria-hidden>μ</span>
         <span className="text-[10px] text-slate-600 font-sans leading-none" aria-hidden>
@@ -107,13 +157,13 @@ function PredictionChannelRow({ label, signedDelta, closenessPct, meanGapPct, ba
           aria-valuenow={atClosenessScaleFloor ? 0 : Math.round(barW)}
           aria-valuetext={
             atClosenessScaleFloor
-              ? `${label} closeness not on 0 to 100 scale, mean gap ${meanGapPct != null && Number.isFinite(meanGapPct) ? `${meanGapPct.toFixed(2)} percent` : 'unknown'}`
-              : `${label} closeness ${Math.round(barW)} percent, mean gap ${meanGapPct != null && Number.isFinite(meanGapPct) ? `${meanGapPct.toFixed(2)} percent` : 'unknown'}`
+              ? `${label} closeness not on 0 to 100 scale, mean chart gap ${meanGapPct != null && Number.isFinite(meanGapPct) ? `${meanGapPct.toFixed(2)} percent` : 'unknown'}`
+              : `${label} closeness ${Math.round(barW)} percent, mean chart gap ${meanGapPct != null && Number.isFinite(meanGapPct) ? `${meanGapPct.toFixed(2)} percent` : 'unknown'}`
           }
           aria-label={
             atClosenessScaleFloor
-              ? `${label} closeness not on scale, mean gap over prediction updates ${meanGapPct != null && Number.isFinite(meanGapPct) ? `${meanGapPct.toFixed(2)} percent` : 'unknown'}`
-              : `${label} closeness ${Math.round(barW)} percent, mean gap over prediction updates ${meanGapPct != null && Number.isFinite(meanGapPct) ? `${meanGapPct.toFixed(2)} percent` : 'unknown'}`
+              ? `${label} closeness not on scale, mean chart gap ${meanGapPct != null && Number.isFinite(meanGapPct) ? `${meanGapPct.toFixed(2)} percent` : 'unknown'}`
+              : `${label} closeness ${Math.round(barW)} percent, mean chart gap ${meanGapPct != null && Number.isFinite(meanGapPct) ? `${meanGapPct.toFixed(2)} percent` : 'unknown'}`
           }
         >
           <div
@@ -129,19 +179,48 @@ function PredictionChannelRow({ label, signedDelta, closenessPct, meanGapPct, ba
   )
 }
 
-function PredictionCard({ symbol, priceHistory, latestActual, latestPredictions, cumulativeStats }) {
+function PredictionCard({ symbol, priceHistory, latestActual, latestPredictions, publishedCountBySymbol }) {
   const history = priceHistory[symbol] || []
   const actual = latestActual[symbol]
   const pqPred = latestPredictions[symbol]?.pq
   const nqPred = latestPredictions[symbol]?.nq
+  const publishedEvents = publishedCountBySymbol?.[symbol]
 
   const pqDelta = actual && pqPred != null ? ((pqPred - actual) / actual) * 100 : null
   const nqDelta = actual && nqPred != null ? ((nqPred - actual) / actual) * 100 : null
 
+  const pqBar = chartChannelGapStats(
+    history,
+    'pq',
+    CHART_ACCURACY_GAP_WINDOW,
+    MIN_SAMPLES_FOR_CLOSENESS_METRIC,
+    CHART_ACCURACY_SHARED_MAX_GAP_PERCENT,
+  )
+  const nqBar = chartChannelGapStats(
+    history,
+    'nq',
+    CHART_ACCURACY_GAP_WINDOW,
+    MIN_SAMPLES_FOR_CLOSENESS_METRIC,
+    CHART_ACCURACY_SHARED_MAX_GAP_PERCENT,
+  )
+
+  const eventsSuffix =
+    typeof publishedEvents === 'number'
+      ? ` (${publishedEvents.toLocaleString()} ${publishedEvents === 1 ? 'event' : 'events'})`
+      : ''
+
   return (
     <div className="bg-slate-800 rounded-xl p-5 border border-slate-700">
       <div className="flex items-center justify-between mb-3">
-        <span className="text-xl font-bold text-white">{symbol}</span>
+        <span
+          className="text-xl font-bold text-white"
+          title="Total published Solace messages for this partition key (symbol) since publisher start"
+        >
+          {symbol}
+          {eventsSuffix ? (
+            <span className="text-slate-400 font-semibold font-sans text-lg">{eventsSuffix}</span>
+          ) : null}
+        </span>
         <span className="text-2xl font-mono font-semibold text-slate-100">
           {actual != null ? `$${actual.toFixed(2)}` : '—'}
         </span>
@@ -168,7 +247,7 @@ function PredictionCard({ symbol, priceHistory, latestActual, latestPredictions,
                 type="monotone"
                 dataKey="actual"
                 name="Actual"
-                stroke="#e2e8f0"
+                stroke="#94a3b8"
                 strokeWidth={2}
                 dot={false}
                 isAnimationActive={false}
@@ -179,6 +258,7 @@ function PredictionCard({ symbol, priceHistory, latestActual, latestPredictions,
                 name="PQ Prediction"
                 stroke="#818cf8"
                 strokeWidth={2}
+                strokeDasharray="4 3"
                 dot={false}
                 isAnimationActive={false}
                 connectNulls={false}
@@ -188,8 +268,8 @@ function PredictionCard({ symbol, priceHistory, latestActual, latestPredictions,
                 dataKey="nq"
                 name="NQ (consumer 1)"
                 stroke="#fb923c"
-                strokeWidth={1.5}
-                strokeDasharray="5 3"
+                strokeWidth={2}
+                strokeDasharray="4 3"
                 dot={false}
                 isAnimationActive={false}
                 connectNulls={false}
@@ -203,16 +283,20 @@ function PredictionCard({ symbol, priceHistory, latestActual, latestPredictions,
         <PredictionChannelRow
           label="PQ"
           signedDelta={pqDelta}
-          closenessPct={cumulativeStats?.pqClosenessPct}
-          meanGapPct={cumulativeStats?.pqMeanGapPct}
+          closenessPct={pqBar.closenessPct}
+          meanGapPct={pqBar.meanGapPct}
           barColorClass="bg-indigo-500"
+          sampleCount={pqBar.sampleCount}
+          scaleMaxGapPercent={CHART_ACCURACY_SHARED_MAX_GAP_PERCENT}
         />
         <PredictionChannelRow
           label="NQ"
           signedDelta={nqDelta}
-          closenessPct={cumulativeStats?.nqClosenessPct}
-          meanGapPct={cumulativeStats?.nqMeanGapPct}
+          closenessPct={nqBar.closenessPct}
+          meanGapPct={nqBar.meanGapPct}
           barColorClass="bg-orange-500"
+          sampleCount={nqBar.sampleCount}
+          scaleMaxGapPercent={CHART_ACCURACY_SHARED_MAX_GAP_PERCENT}
         />
       </div>
     </div>
@@ -225,7 +309,7 @@ export default function PredictionView({
   priceHistory,
   latestActual,
   latestPredictions,
-  symbolCumulativeTrackStats = {},
+  publishedCountBySymbol = {},
 }) {
   const [helpOpen, setHelpOpen] = useState(false)
 
@@ -250,8 +334,8 @@ export default function PredictionView({
           Help
         </button>
         <div className="flex flex-wrap items-center gap-5 bg-slate-800 rounded-lg px-5 py-2.5 border border-slate-700 shrink-0">
-          <LegendItem color="#e2e8f0" label="Actual" />
-          <LegendItem color="#818cf8" label="PQ Prediction" />
+          <LegendItem color="#94a3b8" label="Actual" />
+          <LegendItem color="#818cf8" label="PQ Prediction" dashed />
           <LegendItem color="#fb923c" label={`NQ (consumer ${canonicalNqConsumer})`} dashed />
         </div>
       </div>
@@ -290,18 +374,24 @@ export default function PredictionView({
             <p className="text-slate-500 text-xs leading-relaxed mt-4 border-t border-slate-600 pt-3">
               <strong>Tile rows (PQ / NQ):</strong> each row is{' '}
               <strong className="text-slate-400">channel</strong> · <strong className="text-slate-400">Δ value</strong>{' '}
-              · <strong className="text-slate-400">μ≈</strong> (mean |Δ| over <strong>prediction updates</strong>, then{' '}
+              · <strong className="text-slate-400">μ≈</strong> (mean |Δ| on the <strong>chart</strong>, then{' '}
               <strong>mapped</strong> closeness) · <strong className="text-slate-400">bar</strong> ·{' '}
               <strong className="text-slate-400">%</strong>. The <strong>Δ value</strong> is the latest gap as a percent
               of last published price (prediction minus actual), with <span className="text-sky-300">blue</span> when
               above and <span className="text-red-300">red</span> when below. The <strong>μ≈</strong> label and{' '}
-              <strong>bar + %</strong> are <strong>session closeness</strong>: each time a PQ or NQ prediction is
-              emitted, we compare it to the <strong>last published actual</strong> for that symbol, record |Δ|, and
-              keep a <strong>cumulative mean</strong> of those gaps. We do <strong>not</strong> add a sample on every
-              publisher tick (that would count the same stale NQ against a moving price thousands of times). Map
-              0–100 so <strong>100 ≈ average gap ~0</strong> and when the mean reaches or passes the scale max (
-              {CUMULATIVE_CLOSENESS_SCALE_MAX_GAP_PERCENT}%) we show <strong>NA</strong> instead of “0%” so it is not
-              read as “zero accuracy.” Hover the bar or μ≈ for the numeric mean.
+              <strong>bar + %</strong> use the same data as the lines: at each publisher snapshot we take actual and the
+              PQ/NQ values shown on the chart, compute |pred − actual| / actual, and average the last up to{' '}
+              <strong>{CHART_ACCURACY_GAP_WINDOW}</strong> such points (only rows where that channel has a value).{' '}
+              <strong>Total published message count does not enter this average</strong> — anything older than that
+              trailing slice is ignored, so the bar reflects recent chart behavior, not “since connect” or thousands of
+              orders. The headline <strong>Δ</strong> is only the latest tick, while <strong>μ</strong> and the bar are the
+              mean gap over that short window, so they can disagree with what the eye sees on the far right of the line.
+              Closeness % stays <strong>—</strong> until at least <strong>{MIN_SAMPLES_FOR_CLOSENESS_METRIC}</strong>{' '}
+              overlapping points so a tiny slice of the tape does not dominate. Map 0–100 so{' '}
+              <strong>100 ≈ average gap ~0</strong>. <strong>PQ and NQ share one mean-gap cap</strong> (
+              <strong>{CHART_ACCURACY_SHARED_MAX_GAP_PERCENT}%</strong>) so higher % means lower average error on that
+              channel — comparable across rows. When the mean reaches or passes that cap we show <strong>NA</strong>{' '}
+              instead of “0%” so it is not read as “zero accuracy.” Hover the bar or μ≈ for the numeric mean.
             </p>
           </div>
         </div>
@@ -315,7 +405,7 @@ export default function PredictionView({
             priceHistory={priceHistory}
             latestActual={latestActual}
             latestPredictions={latestPredictions}
-            cumulativeStats={symbolCumulativeTrackStats[symbol]}
+            publishedCountBySymbol={publishedCountBySymbol}
           />
         ))}
       </div>

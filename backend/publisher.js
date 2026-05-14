@@ -68,6 +68,8 @@ class DemoPublisher {
     this.publishInterval = null;
     this.statsInterval = null;
     this.publishedCount = 0;
+    /** Partition key (e.g. symbol) → number of messages published for that key. */
+    this.publishedCountBySymbol = {};
     this.wsClient = null;
 
     this.pricePrediction = isPricePredictionEnabled(profile);
@@ -112,6 +114,7 @@ class DemoPublisher {
         publishedCount: this.publishedCount,
         rate: this.publishRate,
         topicName: `${topicPrefix}/>`,
+        publishedCountBySymbol: { ...this.publishedCountBySymbol },
       };
       if (this.pricePrediction && this.currentPrices) {
         payload.actualPrices = { ...this.currentPrices };
@@ -183,6 +186,10 @@ class DemoPublisher {
     try {
       this.session.send(message);
       this.publishedCount++;
+      if (pk != null && pk !== '') {
+        const sym = String(pk);
+        this.publishedCountBySymbol[sym] = (this.publishedCountBySymbol[sym] || 0) + 1;
+      }
       console.log(`📤 Published: ${pk} (P${partitionKey}) → ${topic}`);
     } catch (error) {
       console.error('❌ Failed to publish:', error);
