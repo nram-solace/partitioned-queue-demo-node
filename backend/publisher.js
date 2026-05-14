@@ -1,7 +1,7 @@
 const solace = require('solclientjs');
 const WebSocket = require('ws');
 const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '..', 'solace.env') });
+require('dotenv').config({ path: path.resolve(__dirname, '..', 'demo.env') });
 
 const {
   loadDemoProfile,
@@ -49,7 +49,7 @@ function loadPublisherProfile() {
     warnLegacyEnvIgnoredOnce();
   } else if (process.env.TOPIC_PREFIX || process.env.SYMBOLS) {
     console.warn(
-      '[demo profile] TOPIC_PREFIX / SYMBOLS are ignored; messages use DEMO_PROFILE (default ./profiles/finance.json). Remove unused env vars from solace.env to silence.',
+      '[demo profile] TOPIC_PREFIX / SYMBOLS are ignored; messages use DEMO_PROFILE (default ./profiles/finance.json). Remove unused env vars from demo.env to silence.',
     );
   }
   const raw = loadDemoProfile(profilePath);

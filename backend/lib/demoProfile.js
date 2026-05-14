@@ -361,7 +361,7 @@ function warnLegacyEnvIgnoredOnce() {
   legacyEnvWarned = true;
   console.warn(
     `[demo profile] Ignoring legacy env vars ${legacy.join(', ')} because DEMO_PROFILE is set. ` +
-      'Remove them from solace.env to silence this warning; they will be removed in a future release.',
+      'Remove them from demo.env to silence this warning; they will be removed in a future release.',
   );
 }
 

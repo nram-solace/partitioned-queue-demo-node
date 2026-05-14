@@ -1,7 +1,7 @@
 const solace = require('solclientjs');
 const WebSocket = require('ws');
 const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '..', 'solace.env') });
+require('dotenv').config({ path: path.resolve(__dirname, '..', 'demo.env') });
 
 const {
   loadDemoProfile,
@@ -42,7 +42,7 @@ class ConsumerManager {
     };
   }
 
-  /** Queue object names from env (same as Solace bindings); sent to the UI so labels match solace.env. */
+  /** Queue object names from env (same as Solace bindings); sent to the UI so labels match demo.env. */
   getQueueNames() {
     return {
       partitioned: process.env.QUEUE_PARTITIONED || 'Orders_PQ',
