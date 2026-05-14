@@ -51,8 +51,13 @@ class ConsumerManager {
     };
   }
 
-  startWebSocketServer(port = process.env.WS_PORT || 8080) {
-    this.wsServer = new WebSocket.Server({ port });
+  startWebSocketServer(port = process.env.WS_PORT || 8081) {
+    const bindHost = process.env.WS_BIND_HOST;
+    const opts = { port: Number(port) };
+    if (bindHost) {
+      opts.host = bindHost;
+    }
+    this.wsServer = new WebSocket.Server(opts);
 
     this.wsServer.on('connection', (ws) => {
       console.log('📱 Dashboard connected');

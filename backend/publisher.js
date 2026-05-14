@@ -83,11 +83,17 @@ class DemoPublisher {
   }
 
   connectToWebSocket() {
-    const wsPort = process.env.WS_PORT || 8080;
-    const wsUrl = `ws://localhost:${wsPort}`;
+    const wsUrl = (process.env.WS_URL || '').trim();
+    const url =
+      wsUrl ||
+      (() => {
+        const host = (process.env.WS_HOST || 'localhost').trim();
+        const port = String(process.env.WS_PORT || '8081').trim();
+        return `ws://${host}:${port}`;
+      })();
 
     try {
-      this.wsClient = new WebSocket(wsUrl);
+      this.wsClient = new WebSocket(url);
 
       this.wsClient.on('open', () => {
         console.log('📡 Connected to WebSocket server');

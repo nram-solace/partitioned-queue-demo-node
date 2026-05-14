@@ -28,18 +28,22 @@ With **`profiles/finance.json`**, the UI can also show a **Prediction** view: pe
 ### Prerequisites
 
 - **Node.js** (v14+)
-- **Docker and Docker Compose** (optional; for local broker and automatic queue setup)
+- **Docker and Docker Compose** (optional; for local full stack: broker, queue init, consumer, publisher, **static frontend on port 3000** — default profile **finance**)
 - **Solace PubSub+** broker you can manage (create queues and topic subscriptions), unless you use the bundled Docker flow below
 
-### 1. Start the broker (Docker)
+### 1. Start the Demo (Docker)
 
 ```bash
-docker compose up -d
+docker compose up -d --build
 ```
 
-This starts a Solace container **`solace-pqdemo`** (PubSub+ Standard) and a one-shot **`solace-init`** that waits for SEMP, then creates **`Demo_PQ`**, **`Demo_NQ`**, and **`Demo_EQ`** (if missing) and adds topic subscription **`solace/demo/>`** on each queue.
+(`--build` recommended the first time or after changing Node dependencies.)
 
-See **`scripts/setup-solace.sh`** if you need to make any changes to Solace resources.To **re-run** provisioning (for example after changing **`PARTITION_COUNT`** or queue names in compose):
+This starts **`solace-broker`** (PubSub+ Standard), a one-shot **`solace-init`** that provisions **`Demo_PQ`**, **`Demo_NQ`**, and **`Demo_EQ`** with topic **`solace/demo/>`**, the **Node `consumer`** and **`publisher`** containers, and a **`frontend`** service (**nginx** serving the Vite production build on host **`http://localhost:3000`**). Defaults (**finance**, eight partitions) live in **`docker/demo.apps.env`**.
+
+See **`scripts/setup-solace.sh`** if you need to change Solace resources.
+
+To **re-run** provisioning (for example after changing **`PARTITION_COUNT`** or queue settings in **`docker/demo.apps.env`**):
 
 ```bash
 docker compose run --rm solace-init
@@ -48,6 +52,7 @@ docker compose run --rm solace-init
 
 Endpoints (typical local setup):
 
+- **Dashboard (Docker frontend)**: http://localhost:3000 (WebSocket to **`ws://localhost:8081`** is baked at image build; override with compose build arg **`VITE_WS_URL`** if needed)
 - **Messaging WebSocket**: `ws://localhost:8008`
 - **PubSub+ Manager**: http://localhost:8080 (`admin` / `admin`)
 
@@ -60,8 +65,11 @@ Check process:
 docker compose ps
 
 Check logs:
-docker compose logs -f solace-pqdemo
+docker compose logs -f solace-broker
 docker compose logs solace-init
+docker compose logs -f consumer
+docker compose logs -f publisher
+docker compose logs -f frontend
 
 Stop:
 docker compose down
@@ -69,6 +77,49 @@ docker compose down
 Remove volumes:
 docker compose down -v
 ```
+
+#### Profile (Docker) and UI
+
+**Switch profile (e.g. retail)** — edit **`docker/demo.apps.env`** only:
+
+- Set **`DEMO_PROFILE=./profiles/retail.json`**
+- Set **`PARTITION_COUNT=5`** (must match **`messaging.partitionKeys.length`** in that JSON; use **`8`** for **`./profiles/finance.json`**)
+
+Then restart the Node containers so they reload **`docker/demo.apps.env`** (profile path, rates, etc.):
+
+```bash
+docker compose up -d --force-recreate consumer publisher
+```
+
+**When do you need `solace-init` again?** Not because of topic subscription or queue names: **`solace/demo/>`** already covers both profiles, and **`Demo_*`** names stay the same.
+
+- **`solace-init`** is a **one-shot** container (`restart: "no"`): Compose does **not** re-run it on every **`docker compose up`** after it has exited successfully. You only recreate it when **broker** settings from **`docker/demo.apps.env`** must be reapplied — mainly **`PARTITION_COUNT`** on **`Demo_PQ`** (8 for finance, 5 for retail). Without re-running init, the broker can keep the wrong partition count while the app loads a different profile.
+- If you **only** changed something that affects **Node** (e.g. **`DEMO_PROFILE`**, **`PUBLISH_RATE`**) and **`PARTITION_COUNT`** is unchanged, **`consumer`** + **`publisher`** recreate is enough.
+
+Retail example (partition count changes):
+
+```bash
+docker compose up -d --force-recreate solace-init consumer publisher
+```
+
+You do not need **`docker compose down`** for a profile switch. The **frontend** container does not need a rebuild unless you change **`Dockerfile.frontend`** build args; the live profile still comes from the consumer over the WebSocket.
+
+The **publisher** container uses **`WS_HOST=consumer`** (set in **`docker-compose.yml`**) so publisher stats reach the consumer (see **`WS_URL` / `WS_HOST`** in [Environment variables](#environment-variables)).
+
+With **`docker compose up`**, open the dashboard at **`http://localhost:3000`**. The static bundle uses **`VITE_WS_URL`** at **image build** time (default **`ws://localhost:8081`**); change compose **`build.args`** and **`docker compose build frontend`** if your host layout differs.
+
+For **local Vite dev** (hot reload), run **`npm run frontend`** on the host and point **`VITE_WS_URL`** at the consumer WebSocket as usual.
+
+**Start/stop apps independently** — use container names, for example:
+
+```bash
+docker stop demo-frontend && docker start demo-frontend
+docker stop demo-publisher && docker start demo-publisher
+docker stop demo-consumer && docker start demo-consumer   # dashboard WS goes down while stopped
+```
+
+**Broker and init only** (no Node containers):  
+`docker compose up -d solace-broker solace-init`
 
 ### 2. Install dependencies
 
@@ -124,7 +175,7 @@ Solace **SMF connection**, **VPN**, **credentials**, **queue names**, **WS_PORT*
 
 ### 4. Create queues on the broker
 
-**Using Docker (step 1)** — Queues and **`solace/demo/>`** subscriptions are created by **`solace-init`**; align **`PARTITION_COUNT`** in compose’s **`.env`** with **`messaging.partitionKeys.length`** in the profile you plan to run. Queue names in **`docker-compose.yml`** default to **`Demo_*`** and should match **`QUEUE_*`** in **`demo.env`**.
+**Using Docker (step 1)** — Queues and **`solace/demo/>`** subscriptions are created by **`solace-init`** from **`docker/demo.apps.env`**; **`PARTITION_COUNT`** there must match **`messaging.partitionKeys.length`** for the **`DEMO_PROFILE`** you set in the same file. Queue names in that file should match **`QUEUE_*`** in **`demo.env`** when you run Node on the host.
 
 **Manual or external broker** — Create these queues (names must match **`demo.env`** unless you override):
 
@@ -205,8 +256,6 @@ The default profile **`profiles/finance.json`** sets **`features.pricePrediction
 
 **Retail** (`profiles/retail.json`) and profiles **without** `features.pricePrediction` only show **Message Flow** (no Prediction tab).
 
-Design and implementation notes for the config-driven demo (including WebSocket profile bootstrap) live under **[`.dev/pm/`](.dev/pm/)** — start with [`impl-generic-demo.md`](.dev/pm/impl-generic-demo.md) and [`plan-generic-demo.md`](.dev/pm/plan-generic-demo.md) if present.
-
 ## Architecture at a glance
 
 ```
@@ -263,7 +312,12 @@ React Dashboard (Vite + React) — Message Flow; optional Prediction tab (financ
 
 ```
 partitioned-queue-demo-node/
-├── docker-compose.yml         # solace-pqdemo + solace-init (SEMP queue setup)
+├── Dockerfile
+├── docker-compose.yml         # solace-broker + solace-init + consumer + publisher + frontend
+├── Dockerfile.frontend      # Vite build + nginx for dashboard (:3000 on host)
+├── docker/
+│   ├── demo.apps.env
+│   └── nginx-frontend.conf
 ├── scripts/
 │   └── setup-solace.sh        # SEMP: Demo_PQ / Demo_NQ / Demo_EQ + solace/demo/>
 ├── backend/
@@ -328,17 +382,21 @@ partitioned-queue-demo-node/
 | `QUEUE_PARTITIONED` | Partitioned queue name | `Demo_PQ` |
 | `QUEUE_NON_EXCLUSIVE` | Non-exclusive queue name | `Demo_NQ` |
 | `QUEUE_EXCLUSIVE` | Exclusive queue name | `Demo_EQ` |
+| `WS_HOST` | Hostname for publisher stats WebSocket (`publisher.js` → consumer). Default **`localhost`**. In Docker Compose use the **consumer** service name. | `localhost` |
+| `WS_URL` | Optional full URL for publisher stats WebSocket; if set, overrides **`WS_HOST`** / **`WS_PORT`**. | — |
+| `WS_BIND_HOST` | If set, WebSocket **`Server`** in **`consumer.js`** binds to this host (use **`0.0.0.0`** in Docker). | — |
 | `NQ_PREDICTION_CONSUMER` | Non-exclusive consumer number (1–5) whose prediction stream feeds the **Prediction** NQ line; must match the dashboard | `1` |
 
-**Docker Compose** (optional **`.env`** next to **`docker-compose.yml`**, not `demo.env`) — used only by **`solace-init`**:
+**Docker Compose** — **`docker/demo.apps.env`** is the single config file for **`solace-init`**, **`consumer`**, and **`publisher`** (profile, partitions, queues, Solace URLs, SEMP wait tuning). **`solace-init`** overrides **`SOLACE_HOST`** to the broker hostname for SEMP; **`SEMP_USER`** / **`SEMP_PASS`** stay **`admin`** from **`docker-compose.yml`**.
+
+**Frontend image build** (optional overrides in **`docker-compose.yml`** or a project **`.env`** used only at **`docker compose build`** time):
 
 | Variable | Description | Typical default |
 |----------|-------------|-----------------|
-| `PARTITION_COUNT` | **`Demo_PQ`** `partitionCount` in SEMP; must equal `messaging.partitionKeys.length` for your profile | `8` (finance); use `5` for retail |
+| `VITE_WS_URL` | WebSocket URL baked into the static dashboard (**from the browser**) | `ws://localhost:8081` |
+| `VITE_NQ_PREDICTION_CONSUMER` | Must match **`NQ_PREDICTION_CONSUMER`** in **`docker/demo.apps.env`** | `1` |
 
-Other init settings (**`QUEUE_PQ`**, **`QUEUE_NQ`**, **`QUEUE_EQ`**, **`DEMO_TOPIC_SUB`**, SEMP credentials) are set in **`docker-compose.yml`**; override there if you rename queues or the topic pattern.
-
-**Frontend (Vite)** — optional: `VITE_WS_URL` overrides the WebSocket URL in `frontend/src/config.js`. **`VITE_NQ_PREDICTION_CONSUMER`** must match **`NQ_PREDICTION_CONSUMER`** when using prediction charts (set in the shell or a `frontend/.env.local` for Vite). See comments in `demo.env.example`.
+**Frontend (Vite on host)** — optional: `VITE_WS_URL` overrides the WebSocket URL in `frontend/src/config.js`. **`VITE_NQ_PREDICTION_CONSUMER`** must match **`NQ_PREDICTION_CONSUMER`** when using prediction charts (set in the shell or a `frontend/.env.local` for Vite). See comments in `demo.env.example`.
 
 ### Troubleshooting
 
@@ -346,7 +404,7 @@ Other init settings (**`QUEUE_PQ`**, **`QUEUE_NQ`**, **`QUEUE_EQ`**, **`DEMO_TOP
 
 - Confirm **`demo.env`** host, VPN, user, password.  
 - Ensure all three queues exist and subscribe to a topic wildcard that covers your **`DEMO_PROFILE`** (Docker: **`solace/demo/>`** via **`solace-init`**; otherwise **`{topicPrefix}/>`**).  
-- Partitioned queue: **partition count = `partitionKeys.length` in your profile** (Docker: check **`PARTITION_COUNT`** and re-run **`docker compose run --rm solace-init`** if you switched profiles). Partition key **JMSXGroupID**.
+- Partitioned queue: **partition count = `partitionKeys.length` in your profile** (Docker: when **`PARTITION_COUNT`** in **`docker/demo.apps.env`** changes, re-run **`solace-init`** — see **Profile (Docker) and UI** above). Partition key **JMSXGroupID**.
 
 **No messages**
 
@@ -355,8 +413,8 @@ Other init settings (**`QUEUE_PQ`**, **`QUEUE_NQ`**, **`QUEUE_EQ`**, **`DEMO_TOP
 
 **UI not updating**
 
-- `npm run consumer` must be running (WebSocket server).  
-- Browser / `config.js`: WebSocket URL must match `WS_PORT`.  
+- The **consumer** process must be running (WebSocket server) — locally **`npm run consumer`**, or the **`demo-consumer`** container from **`docker compose up`**.  
+- Browser / `config.js`: WebSocket URL must match `WS_PORT` (host mapped **`8081`** when using Docker consumer).  
 - Header should show connected state.  
 - After upgrading this repo, do a **hard refresh** so the SPA loads the `demoProfile` WebSocket handler.
 
@@ -368,6 +426,22 @@ Other init settings (**`QUEUE_PQ`**, **`QUEUE_NQ`**, **`QUEUE_EQ`**, **`DEMO_TOP
 
 - Allow ~5s for stabilization.  
 - Ensure at least one partitioned consumer is connected and traffic is flowing.
+
+**PubSub+ Manager (`http://localhost:8080`) — connection refused**
+
+- **`docker ps`** should show host bindings like **`0.0.0.0:8080->8080/tcp`**. If you only see **`8080/tcp`** (no **`->`**) the container was started **without** publishing ports (for example `docker run` without **`-p 8080:8080`**). From this repo use **`docker compose up -d`** in the project directory so **`docker-compose.yml`** port mappings apply, or recreate the container with explicit **`-p`** flags.
+- Confirm nothing else is bound to **8080**: `lsof -i :8080` (macOS) or `ss -lntp | grep 8080`.
+- Try **IPv4 explicitly**: `curl -v http://127.0.0.1:8080/` (some setups resolve **`localhost`** to **IPv6** first while Docker publishes **IPv4** only).
+
+**Broker container shows `unhealthy`**
+
+- First boot can take **1–2 minutes** before **8080** answers; wait and check **`docker compose logs -f solace-broker`**.  
+- This compose file’s health check probes **PubSub+ Manager / SEMP on port 8080** inside the container (not guaranteed-messaging on **5550**), so **`healthy`** aligns with the UI being reachable. If you still see **`unhealthy`** after ~2 minutes, inspect the container: **`docker exec solace-broker curl -sf http://127.0.0.1:8080/ | head`**.
+
+**`solace-broker-init` exits 1** (SEMP / queue setup failed)
+
+- **`solace-init`** starts only after **`solace-broker`** is **healthy**, then waits for SEMP (see **`SEMP_WAIT_*`** in **`docker/demo.apps.env`**), with retries on **502/503/504** for queue and subscription writes. On very slow disks, raise those values in **`docker/demo.apps.env`**.  
+- Re-run provisioning: **`docker compose run --rm solace-init`**.
 
 ## License
 

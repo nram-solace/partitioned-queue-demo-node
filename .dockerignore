@@ -1,0 +1,9 @@
+node_modules
+frontend/node_modules
+.git
+tmp
+.dev
+resources
+*.md
+!README.md
+npm-debug.log*

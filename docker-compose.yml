@@ -1,8 +1,8 @@
 services:
-  solace-pqdemo:
+  solace-broker:
     image: solace/solace-pubsub-standard:latest
-    container_name: solace-pqdemo
-    hostname: solace-pqdemo
+    container_name: solace-broker
+    hostname: solace-broker
     shm_size: 2g
     ulimits:
       nofile:
@@ -35,11 +35,13 @@ services:
       - solace-logs:/var/lib/solace/logs
       
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:5550/health-check/guaranteed-messaging || exit 1"]
-      interval: 10s
+      # Guaranteed-messaging probe on :5550 often stays red until spool is fully up; Manager/SEMP on :8080
+      # matches what you use in the browser and is a better readiness signal for this demo.
+      test: ["CMD-SHELL", "curl -sf --connect-timeout 3 http://127.0.0.1:8080/ >/dev/null || exit 1"]
+      interval: 15s
       timeout: 5s
-      retries: 5
-      start_period: 60s
+      retries: 10
+      start_period: 180s
       
     restart: unless-stopped
 
@@ -47,25 +49,19 @@ services:
   # topic subscription solace/demo/> (SEMP), same pattern as tmp/IBMMQ-Connector/docker-compose.yaml.
   solace-init:
     image: alpine:3.19
-    container_name: solace-pqdemo-init
+    container_name: solace-broker-init
     depends_on:
-      solace-pqdemo:
-        condition: service_started
+      solace-broker:
+        condition: service_healthy
     volumes:
       - ./scripts:/app/scripts:ro
+    env_file:
+      - ./docker/demo.apps.env
     environment:
-      SOLACE_HOST: solace-pqdemo
-      SEMP_PORT: "8080"
-      MSG_VPN: default
+      # SEMP uses plain hostname; SOLACE_HOST in the file is the ws:// URL for Node apps.
+      SOLACE_HOST: solace-broker
       SEMP_USER: admin
       SEMP_PASS: admin
-      QUEUE_PQ: Demo_PQ
-      QUEUE_NQ: Demo_NQ
-      QUEUE_EQ: Demo_EQ
-      DEMO_TOPIC_SUB: solace/demo/>
-      # Must match partitionKeys.length in the profile you run (8 = finance.json, 5 = retail.json).
-      # Override from a project `.env` file: PARTITION_COUNT=5
-      PARTITION_COUNT: ${PARTITION_COUNT:-8}
     restart: "no"
     entrypoint: ["/bin/sh", "-c"]
     command:
@@ -73,6 +69,63 @@ services:
         set -e
         apk add --no-cache curl jq >/dev/null
         exec /bin/sh /app/scripts/setup-solace.sh
+
+  # Node consumer + publisher (config: docker/demo.apps.env).
+  consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: partitioned-queue-demo-node:local
+    container_name: demo-consumer
+    command: ["node", "backend/consumer.js"]
+    depends_on:
+      solace-broker:
+        condition: service_started
+      solace-init:
+        condition: service_completed_successfully
+    env_file:
+      - ./docker/demo.apps.env
+    ports:
+      - "8081:8081"
+    restart: unless-stopped
+
+  publisher:
+    image: partitioned-queue-demo-node:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: demo-publisher
+    command: ["node", "backend/publisher.js"]
+    depends_on:
+      solace-broker:
+        condition: service_started
+      solace-init:
+        condition: service_completed_successfully
+      consumer:
+        condition: service_started
+    env_file:
+      - ./docker/demo.apps.env
+    environment:
+      # Stats WebSocket: reach consumer by Compose service name (not localhost).
+      WS_HOST: consumer
+    restart: unless-stopped
+
+  # Static React dashboard (Vite build); browser uses host WS port 8081 → consumer.
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+      args:
+        VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:8081}
+        VITE_NQ_PREDICTION_CONSUMER: ${VITE_NQ_PREDICTION_CONSUMER:-1}
+    image: partitioned-queue-demo-frontend:local
+    container_name: demo-frontend
+    depends_on:
+      consumer:
+        condition: service_started
+    ports:
+      - "3000:80"
+    restart: unless-stopped
 
 volumes:
   solace-data:
