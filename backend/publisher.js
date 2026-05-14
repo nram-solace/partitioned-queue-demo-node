@@ -11,7 +11,31 @@ const {
   jmsxGroupIdForMessage,
   topicForMessage,
   warnLegacyEnvIgnoredOnce,
+  isPricePredictionEnabled,
 } = require('./lib/demoProfile');
+
+function gaussianRandom() {
+  let u = 0;
+  let v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+}
+
+function buildSymbolPredictionConfig(profile) {
+  const priceField = profile.messageFields.find((f) => f.name === 'price' && f.type === 'float');
+  if (!priceField?.baselineByPartitionKey || !priceField.volatilityByPartitionKey) {
+    return null;
+  }
+  const cfg = {};
+  for (const sym of profile.messaging.partitionKeys) {
+    cfg[sym] = {
+      basePrice: priceField.baselineByPartitionKey[sym],
+      volatility: priceField.volatilityByPartitionKey[sym],
+    };
+  }
+  return cfg;
+}
 
 // Initialize Solace factory
 const factoryProps = new solace.SolclientFactoryProperties();
@@ -45,6 +69,15 @@ class DemoPublisher {
     this.statsInterval = null;
     this.publishedCount = 0;
     this.wsClient = null;
+
+    this.pricePrediction = isPricePredictionEnabled(profile);
+    this.symbolPredictionConfig = this.pricePrediction ? buildSymbolPredictionConfig(profile) : null;
+    this.currentPrices = null;
+    if (this.pricePrediction && this.symbolPredictionConfig) {
+      this.currentPrices = Object.fromEntries(
+        profile.messaging.partitionKeys.map((s) => [s, this.symbolPredictionConfig[s].basePrice]),
+      );
+    }
   }
 
   connectToWebSocket() {
@@ -74,14 +107,16 @@ class DemoPublisher {
   sendPublisherStats() {
     if (this.wsClient && this.wsClient.readyState === WebSocket.OPEN) {
       const topicPrefix = this.profile.messaging.topicPrefix;
-      this.wsClient.send(
-        JSON.stringify({
-          type: 'publisherStats',
-          publishedCount: this.publishedCount,
-          rate: this.publishRate,
-          topicName: `${topicPrefix}/>`,
-        }),
-      );
+      const payload = {
+        type: 'publisherStats',
+        publishedCount: this.publishedCount,
+        rate: this.publishRate,
+        topicName: `${topicPrefix}/>`,
+      };
+      if (this.pricePrediction && this.currentPrices) {
+        payload.actualPrices = { ...this.currentPrices };
+      }
+      this.wsClient.send(JSON.stringify(payload));
     }
   }
 
@@ -120,7 +155,16 @@ class DemoPublisher {
   }
 
   generateOrder() {
-    return generateMessageFromProfile(this.profile, this.orderCounter);
+    const order = generateMessageFromProfile(this.profile, this.orderCounter);
+    if (this.pricePrediction && this.symbolPredictionConfig && this.currentPrices) {
+      const pk = order[this.profile.messaging.partitionKeyField];
+      const sc = this.symbolPredictionConfig[pk] || { basePrice: 100, volatility: 0.003 };
+      const prev = this.currentPrices[pk] ?? sc.basePrice;
+      const raw = prev * (1 + sc.volatility * gaussianRandom());
+      this.currentPrices[pk] = parseFloat(Math.max(0.01, raw).toFixed(2));
+      order.price = this.currentPrices[pk];
+    }
+    return order;
   }
 
   publishOrder(order) {

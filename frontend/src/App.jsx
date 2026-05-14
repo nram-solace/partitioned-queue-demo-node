@@ -1,8 +1,12 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import QueuePanel from './components/QueuePanel'
 import Header from './components/Header'
 import PublisherStatus from './components/PublisherStatus'
+import PredictionView from './components/PredictionView'
 import { WS_URL } from './config'
+
+const CANONICAL_NQ_CONSUMER = parseInt(import.meta.env.VITE_NQ_PREDICTION_CONSUMER || '1', 10)
+const HISTORY_LIMIT = 60
 
 function deriveQueueNamesFromConsumers(consumers) {
   if (!consumers?.length) return null
@@ -22,37 +26,43 @@ function App() {
   const [queueNames, setQueueNames] = useState(null)
 
   const [consumers, setConsumers] = useState({
-    partitioned: Array(5).fill(null).map((_, i) => ({
-      id: i + 1,
-      queueName: '',
-      queueType: 'partitioned',
-      consumerNumber: i + 1,
-      status: 'offline',
-      messagesProcessed: 0,
-      rate: 0,
-      lastOrders: [],
-      assignedPartitionKey: null
-    })),
-    nonExclusive: Array(5).fill(null).map((_, i) => ({
-      id: i + 6,
-      queueName: '',
-      queueType: 'non-exclusive',
-      consumerNumber: i + 1,
-      status: 'offline',
-      messagesProcessed: 0,
-      rate: 0,
-      lastOrders: []
-    })),
-    exclusive: Array(5).fill(null).map((_, i) => ({
-      id: i + 11,
-      queueName: '',
-      queueType: 'exclusive',
-      consumerNumber: i + 1,
-      status: 'offline',
-      messagesProcessed: 0,
-      rate: 0,
-      lastOrders: []
-    }))
+    partitioned: Array(5)
+      .fill(null)
+      .map((_, i) => ({
+        id: i + 1,
+        queueName: '',
+        queueType: 'partitioned',
+        consumerNumber: i + 1,
+        status: 'offline',
+        messagesProcessed: 0,
+        rate: 0,
+        lastOrders: [],
+        assignedPartitionKey: null,
+      })),
+    nonExclusive: Array(5)
+      .fill(null)
+      .map((_, i) => ({
+        id: i + 6,
+        queueName: '',
+        queueType: 'non-exclusive',
+        consumerNumber: i + 1,
+        status: 'offline',
+        messagesProcessed: 0,
+        rate: 0,
+        lastOrders: [],
+      })),
+    exclusive: Array(5)
+      .fill(null)
+      .map((_, i) => ({
+        id: i + 11,
+        queueName: '',
+        queueType: 'exclusive',
+        consumerNumber: i + 1,
+        status: 'offline',
+        messagesProcessed: 0,
+        rate: 0,
+        lastOrders: [],
+      })),
   })
 
   const [wsConnected, setWsConnected] = useState(false)
@@ -63,13 +73,19 @@ function App() {
   const [messageCounts, setMessageCounts] = useState({
     partitioned: 0,
     'non-exclusive': 0,
-    exclusive: 0
+    exclusive: 0,
   })
   const [publisherStats, setPublisherStats] = useState({
     publishedCount: 0,
     rate: 0,
-    topicName: ''
+    topicName: '',
   })
+
+  const [activeView, setActiveView] = useState('cards')
+  const [latestActual, setLatestActual] = useState({})
+  const [latestPredictions, setLatestPredictions] = useState({})
+  const [priceHistory, setPriceHistory] = useState({})
+  const predictionsRef = useRef({})
 
   useEffect(() => {
     if (!profile) return
@@ -77,11 +93,45 @@ function App() {
     if (t) {
       document.title = t
     }
+    if (!profile.features?.pricePrediction) {
+      setActiveView('cards')
+    }
   }, [profile])
 
   useEffect(() => {
     let ws = null
     let reconnectTimeout = null
+
+    const applyPublisherStatsPayload = (data) => {
+      setPublisherStats({
+        publishedCount: data.publishedCount,
+        rate: data.rate,
+        topicName: data.topicName || '',
+        ...(data.actualPrices && typeof data.actualPrices === 'object'
+          ? { actualPrices: data.actualPrices }
+          : {}),
+      })
+      if (data.actualPrices && typeof data.actualPrices === 'object') {
+        setLatestActual(data.actualPrices)
+        const timestamp = Date.now()
+        setPriceHistory((prev) => {
+          const next = { ...prev }
+          Object.entries(data.actualPrices).forEach(([symbol, actual]) => {
+            const preds = predictionsRef.current[symbol] || {}
+            const point = {
+              time: timestamp,
+              actual,
+              pq: preds.pq ?? null,
+              nq: preds.nq ?? null,
+            }
+            const history = [...(next[symbol] || []), point]
+            if (history.length > HISTORY_LIMIT) history.shift()
+            next[symbol] = history
+          })
+          return next
+        })
+      }
+    }
 
     const connect = () => {
       ws = new WebSocket(WS_URL)
@@ -105,11 +155,22 @@ function App() {
         if (data.type === 'order') {
           updateConsumer(data)
           if (data.messageCount) {
-            setMessageCounts(prev => ({
+            setMessageCounts((prev) => ({
               ...prev,
-              [data.queueType]: data.messageCount
+              [data.queueType]: data.messageCount,
             }))
           }
+        } else if (data.type === 'prediction') {
+          if (data.queueType === 'non-exclusive' && data.consumerNumber !== CANONICAL_NQ_CONSUMER) {
+            return
+          }
+          const field = data.queueType === 'partitioned' ? 'pq' : 'nq'
+          if (!predictionsRef.current[data.symbol]) predictionsRef.current[data.symbol] = {}
+          predictionsRef.current[data.symbol][field] = data.predictedPrice
+          setLatestPredictions((prev) => ({
+            ...prev,
+            [data.symbol]: { ...prev[data.symbol], [field]: data.predictedPrice },
+          }))
         } else if (data.type === 'status') {
           updateConsumerStatus(data)
         } else if (data.type === 'state') {
@@ -136,14 +197,10 @@ function App() {
             setMessageCounts(data.messageCounts)
           }
           if (data.publisherStats) {
-            setPublisherStats(data.publisherStats)
+            applyPublisherStatsPayload(data.publisherStats)
           }
         } else if (data.type === 'publisherStats') {
-          setPublisherStats({
-            publishedCount: data.publishedCount,
-            rate: data.rate,
-            topicName: data.topicName || ''
-          })
+          applyPublisherStatsPayload(data)
         } else if (data.type === 'partitionState') {
           setPartitionState(data.state)
         } else if (data.type === 'queueState') {
@@ -167,6 +224,11 @@ function App() {
         setWsConnected(false)
         setProfile(null)
         setQueueNames(null)
+        predictionsRef.current = {}
+        setLatestActual({})
+        setLatestPredictions({})
+        setPriceHistory({})
+        setActiveView('cards')
         reconnectTimeout = setTimeout(() => {
           console.log('Attempting to reconnect...')
           connect()
@@ -190,10 +252,14 @@ function App() {
   }, [])
 
   const updateConsumer = (data) => {
-    setConsumers(prev => {
+    setConsumers((prev) => {
       const newConsumers = { ...prev }
-      const queueKey = data.queueType === 'partitioned' ? 'partitioned' :
-                       data.queueType === 'non-exclusive' ? 'nonExclusive' : 'exclusive'
+      const queueKey =
+        data.queueType === 'partitioned'
+          ? 'partitioned'
+          : data.queueType === 'non-exclusive'
+            ? 'nonExclusive'
+            : 'exclusive'
 
       const index = data.consumerNumber - 1
       if (newConsumers[queueKey][index]) {
@@ -203,11 +269,9 @@ function App() {
           messagesProcessed: data.stats.messagesProcessed,
           rate: data.stats.rate,
           lastOrders: data.lastOrders || [],
-          ...(data.queueName != null && data.queueName !== ''
-            ? { queueName: data.queueName }
-            : {}),
+          ...(data.queueName != null && data.queueName !== '' ? { queueName: data.queueName } : {}),
           assignedPartitionKey:
-            data.assignedPartitionKey ?? newConsumers[queueKey][index].assignedPartitionKey
+            data.assignedPartitionKey ?? newConsumers[queueKey][index].assignedPartitionKey,
         }
       }
 
@@ -216,19 +280,21 @@ function App() {
   }
 
   const updateConsumerStatus = (data) => {
-    setConsumers(prev => {
+    setConsumers((prev) => {
       const newConsumers = { ...prev }
-      const queueKey = data.queueType === 'partitioned' ? 'partitioned' :
-                       data.queueType === 'non-exclusive' ? 'nonExclusive' : 'exclusive'
+      const queueKey =
+        data.queueType === 'partitioned'
+          ? 'partitioned'
+          : data.queueType === 'non-exclusive'
+            ? 'nonExclusive'
+            : 'exclusive'
 
       const index = data.consumerNumber - 1
       if (newConsumers[queueKey][index]) {
         newConsumers[queueKey][index] = {
           ...newConsumers[queueKey][index],
           status: data.status,
-          ...(data.queueName != null && data.queueName !== ''
-            ? { queueName: data.queueName }
-            : {}),
+          ...(data.queueName != null && data.queueName !== '' ? { queueName: data.queueName } : {}),
         }
       }
 
@@ -237,11 +303,15 @@ function App() {
   }
 
   const updateConsumersFromState = (stateConsumers) => {
-    setConsumers(prev => {
+    setConsumers((prev) => {
       const newConsumers = { ...prev }
-      stateConsumers.forEach(consumer => {
-        const queueKey = consumer.queueType === 'partitioned' ? 'partitioned' :
-                         consumer.queueType === 'non-exclusive' ? 'nonExclusive' : 'exclusive'
+      stateConsumers.forEach((consumer) => {
+        const queueKey =
+          consumer.queueType === 'partitioned'
+            ? 'partitioned'
+            : consumer.queueType === 'non-exclusive'
+              ? 'nonExclusive'
+              : 'exclusive'
         const index = consumer.consumerNumber - 1
         if (newConsumers[queueKey][index]) {
           const { assignedSymbol, ...rest } = consumer
@@ -249,7 +319,9 @@ function App() {
             ...newConsumers[queueKey][index],
             ...rest,
             assignedPartitionKey:
-              rest.assignedPartitionKey ?? assignedSymbol ?? newConsumers[queueKey][index].assignedPartitionKey
+              rest.assignedPartitionKey ??
+              assignedSymbol ??
+              newConsumers[queueKey][index].assignedPartitionKey,
           }
         }
       })
@@ -259,19 +331,23 @@ function App() {
 
   const handleDisconnect = (consumerId) => {
     if (window.wsConnection && window.wsConnection.readyState === WebSocket.OPEN) {
-      window.wsConnection.send(JSON.stringify({
-        type: 'disconnect',
-        consumerId
-      }))
+      window.wsConnection.send(
+        JSON.stringify({
+          type: 'disconnect',
+          consumerId,
+        }),
+      )
     }
   }
 
   const handleReconnect = (consumerId) => {
     if (window.wsConnection && window.wsConnection.readyState === WebSocket.OPEN) {
-      window.wsConnection.send(JSON.stringify({
-        type: 'reconnect',
-        consumerId
-      }))
+      window.wsConnection.send(
+        JSON.stringify({
+          type: 'reconnect',
+          consumerId,
+        }),
+      )
     }
   }
 
@@ -282,50 +358,73 @@ function App() {
   const qNonEx = queueNames?.nonExclusive ?? '…'
   const qEx = queueNames?.exclusive ?? '…'
 
+  const showPricePrediction = !!profile?.features?.pricePrediction
+  const chartSymbols = (
+    Object.keys(latestActual).length > 0
+      ? Object.keys(latestActual)
+      : profile?.messaging?.partitionKeys ?? []
+  ).sort()
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100">
-      <Header connected={wsConnected} profile={profile} />
+      <Header
+        connected={wsConnected}
+        profile={profile}
+        activeView={activeView}
+        onViewChange={setActiveView}
+        showPrediction={showPricePrediction}
+      />
 
-      <div className="container mx-auto px-4 py-6 space-y-6">
-        <PublisherStatus
-          totalMessages={publisherStats.publishedCount}
-          topicName={publisherStats.topicName || topicFallback}
-        />
+      {activeView === 'cards' ? (
+        <div className="container mx-auto px-4 py-6 space-y-6">
+          <PublisherStatus
+            totalMessages={publisherStats.publishedCount}
+            topicName={publisherStats.topicName || topicFallback}
+          />
 
-        <QueuePanel
-          queueName={qPart}
-          consumers={consumers.partitioned}
-          queueType="partitioned"
-          partitionState={partitionState}
-          queueState={partitionedState}
-          messageCount={messageCounts.partitioned}
-          onDisconnect={handleDisconnect}
-          onReconnect={handleReconnect}
-          profile={profile}
-        />
+          <QueuePanel
+            queueName={qPart}
+            consumers={consumers.partitioned}
+            queueType="partitioned"
+            partitionState={partitionState}
+            queueState={partitionedState}
+            messageCount={messageCounts.partitioned}
+            onDisconnect={handleDisconnect}
+            onReconnect={handleReconnect}
+            profile={profile}
+          />
 
-        <QueuePanel
-          queueName={qNonEx}
-          consumers={consumers.nonExclusive}
-          queueType="non-exclusive"
-          queueState={nonExclusiveState}
-          messageCount={messageCounts['non-exclusive']}
-          onDisconnect={handleDisconnect}
-          onReconnect={handleReconnect}
-          profile={profile}
-        />
+          <QueuePanel
+            queueName={qNonEx}
+            consumers={consumers.nonExclusive}
+            queueType="non-exclusive"
+            queueState={nonExclusiveState}
+            messageCount={messageCounts['non-exclusive']}
+            onDisconnect={handleDisconnect}
+            onReconnect={handleReconnect}
+            profile={profile}
+          />
 
-        <QueuePanel
-          queueName={qEx}
-          consumers={consumers.exclusive}
-          queueType="exclusive"
-          queueState={exclusiveState}
-          messageCount={messageCounts.exclusive}
-          onDisconnect={handleDisconnect}
-          onReconnect={handleReconnect}
-          profile={profile}
+          <QueuePanel
+            queueName={qEx}
+            consumers={consumers.exclusive}
+            queueType="exclusive"
+            queueState={exclusiveState}
+            messageCount={messageCounts.exclusive}
+            onDisconnect={handleDisconnect}
+            onReconnect={handleReconnect}
+            profile={profile}
+          />
+        </div>
+      ) : (
+        <PredictionView
+          symbols={chartSymbols}
+          canonicalNqConsumer={CANONICAL_NQ_CONSUMER}
+          priceHistory={priceHistory}
+          latestActual={latestActual}
+          latestPredictions={latestPredictions}
         />
-      </div>
+      )}
     </div>
   )
 }

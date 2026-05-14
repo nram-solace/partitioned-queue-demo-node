@@ -8,6 +8,7 @@ const {
   validateDemoProfile,
   resolveDemoProfilePathFromEnv,
   warnLegacyEnvIgnoredOnce,
+  isPricePredictionEnabled,
 } = require('./lib/demoProfile');
 
 // Initialize Solace factory
@@ -78,7 +79,10 @@ class ConsumerManager {
             this.publisherStats = {
               publishedCount: data.publishedCount,
               rate: data.rate,
-              topicName: data.topicName || ''
+              topicName: data.topicName || '',
+              ...(data.actualPrices && typeof data.actualPrices === 'object'
+                ? { actualPrices: data.actualPrices }
+                : {}),
             };
             this.broadcast({
               type: 'publisherStats',
@@ -354,6 +358,8 @@ class ConsumerManager {
     ];
 
     let consumerId = 1;
+    const pricePrediction = isPricePredictionEnabled(this.profile);
+    const canonicalNqConsumer = parseInt(process.env.NQ_PREDICTION_CONSUMER || '1', 10);
     for (const queue of queues) {
       for (let i = 0; i < queue.count; i++) {
         const consumer = new QueueConsumer(
@@ -384,7 +390,8 @@ class ConsumerManager {
             if (queue.type === 'exclusive' && data.type === 'status') {
               this.checkExclusiveState();
             }
-          }
+          },
+          { pricePrediction, canonicalNqConsumer }
         );
         this.consumers.push(consumer);
         await consumer.connect();
@@ -410,8 +417,37 @@ class ConsumerManager {
   }
 }
 
+class PredictionEngine {
+  constructor(alpha = 0.15) {
+    this.alpha = alpha;
+    this.ema = null;
+    this.window = [];
+    this.maxWindow = 20;
+    this.tradeCount = 0;
+  }
+
+  update(price, quantity) {
+    this.tradeCount++;
+
+    this.ema =
+      this.ema === null ? price : this.alpha * price + (1 - this.alpha) * this.ema;
+
+    this.window.push({ price, quantity });
+    if (this.window.length > this.maxWindow) {
+      this.window.shift();
+    }
+    const totalQty = this.window.reduce((s, t) => s + t.quantity, 0);
+    const vwap =
+      totalQty === 0
+        ? price
+        : this.window.reduce((s, t) => s + t.price * t.quantity, 0) / totalQty;
+
+    return parseFloat((0.6 * this.ema + 0.4 * vwap).toFixed(2));
+  }
+}
+
 class QueueConsumer {
-  constructor(id, queueName, queueType, consumerNumber, partitionKeyField, onMessage) {
+  constructor(id, queueName, queueType, consumerNumber, partitionKeyField, onMessage, options = {}) {
     this.id = id;
     this.queueName = queueName;
     this.queueType = queueType;
@@ -426,6 +462,9 @@ class QueueConsumer {
     this.startTime = Date.now();
     this.assignedPartitionKey = null;
     this.manualDisconnect = false; // Track if disconnect was manual
+    this.pricePrediction = options.pricePrediction === true;
+    this.canonicalNqConsumer = options.canonicalNqConsumer ?? 1;
+    this.predictionEngines = new Map();
   }
 
   connect() {
@@ -546,6 +585,36 @@ class QueueConsumer {
       this.lastOrders.unshift(orderData);
       if (this.lastOrders.length > 5) {
         this.lastOrders.pop();
+      }
+
+      if (
+        this.pricePrediction &&
+        (this.queueType === 'partitioned' || this.queueType === 'non-exclusive')
+      ) {
+        const useNqPrediction =
+          this.queueType !== 'non-exclusive' || this.consumerNumber === this.canonicalNqConsumer;
+        if (useNqPrediction) {
+          const seriesKey = orderData[this.partitionKeyField];
+          const price = orderData.price;
+          const quantity = orderData.quantity;
+          if (seriesKey != null && typeof price === 'number' && typeof quantity === 'number') {
+            let engine = this.predictionEngines.get(seriesKey);
+            if (!engine) {
+              engine = new PredictionEngine();
+              this.predictionEngines.set(seriesKey, engine);
+            }
+            const predictedPrice = engine.update(price, quantity);
+            this.onMessage({
+              type: 'prediction',
+              consumerId: this.id,
+              queueType: this.queueType,
+              consumerNumber: this.consumerNumber,
+              symbol: seriesKey,
+              predictedPrice,
+              tradesUsed: engine.tradeCount,
+            });
+          }
+        }
       }
 
       // Calculate rate

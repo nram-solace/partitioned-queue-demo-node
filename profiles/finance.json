@@ -1,6 +1,9 @@
 {
   "schemaVersion": 1,
   "id": "finance",
+  "features": {
+    "pricePrediction": true
+  },
   "branding": {
     "appTitle": "Market data demo",
     "subtitle": "Solace PubSub+ queue types",
@@ -30,6 +33,13 @@
         "MSFT": 378.85,
         "AMZN": 145.2,
         "TSLA": 248.5
+      },
+      "volatilityByPartitionKey": {
+        "AAPL": 0.003,
+        "GOOGL": 0.004,
+        "MSFT": 0.0025,
+        "AMZN": 0.0045,
+        "TSLA": 0.007
       },
       "jitter": 2
     },

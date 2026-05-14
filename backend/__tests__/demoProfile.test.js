@@ -7,6 +7,7 @@ const {
   generateMessageFromProfile,
   jmsxGroupIdForMessage,
   topicForMessage,
+  isPricePredictionEnabled,
 } = require('../lib/demoProfile');
 
 const financePath = path.join(__dirname, '../../profiles/finance.json');
@@ -16,12 +17,14 @@ test('parse and validate profiles/retail.json', () => {
   const p = loadDemoProfile(retailPath);
   validateDemoProfile(p);
   assert.equal(p.id, 'retail');
+  assert.equal(isPricePredictionEnabled(p), false);
 });
 
 test('parse and validate profiles/finance.json', () => {
   const p = loadDemoProfile(financePath);
   validateDemoProfile(p);
   assert.equal(p.id, 'finance');
+  assert.equal(isPricePredictionEnabled(p), true);
 });
 
 test('invalid profile throws actionable error', () => {
