@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   solace-pqdemo:
     image: solace/solace-pubsub-standard:latest
@@ -44,6 +42,37 @@ services:
       start_period: 60s
       
     restart: unless-stopped
+
+  # After the broker container starts, create Demo_PQ / Demo_NQ / Demo_EQ and
+  # topic subscription solace/demo/> (SEMP), same pattern as tmp/IBMMQ-Connector/docker-compose.yaml.
+  solace-init:
+    image: alpine:3.19
+    container_name: solace-pqdemo-init
+    depends_on:
+      solace-pqdemo:
+        condition: service_started
+    volumes:
+      - ./scripts:/app/scripts:ro
+    environment:
+      SOLACE_HOST: solace-pqdemo
+      SEMP_PORT: "8080"
+      MSG_VPN: default
+      SEMP_USER: admin
+      SEMP_PASS: admin
+      QUEUE_PQ: Demo_PQ
+      QUEUE_NQ: Demo_NQ
+      QUEUE_EQ: Demo_EQ
+      DEMO_TOPIC_SUB: solace/demo/>
+      # Must match partitionKeys.length in the profile you run (8 = finance.json, 5 = retail.json).
+      # Override from a project `.env` file: PARTITION_COUNT=5
+      PARTITION_COUNT: ${PARTITION_COUNT:-8}
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        apk add --no-cache curl jq >/dev/null
+        exec /bin/sh /app/scripts/setup-solace.sh
 
 volumes:
   solace-data:
