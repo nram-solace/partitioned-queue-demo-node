@@ -108,7 +108,7 @@ The **publisher** container uses **`WS_HOST=consumer`** (set in **`docker-compos
 
 With **`docker compose up`**, open the dashboard at **`http://localhost:3000`**. The static bundle uses **`VITE_WS_URL`** at **image build** time (default **`ws://localhost:8081`**); change compose **`build.args`** and **`docker compose build frontend`** if your host layout differs.
 
-**Remote browsers (e.g. Azure VM public IP):** set **`wsUrl`** (and optionally **`version`**) in **`docker/dashboard-config.js`** (mounted into nginx as **`/config.js`**). Example: `wsUrl: 'ws://YOUR_PUBLIC_IP:8081'`, `version: '1.2'`. Then **`docker compose restart frontend`** — **no frontend image rebuild** required for those keys. Build-time **`VITE_*`** still applies when **`wsUrl`** is **`null`**.
+**Remote browsers (e.g. Azure VM public IP):** if **`wsUrl`** is **`null`**, the app now uses **`ws://<same host as the page>:8081`** when the page is not on localhost (so a baked-in **`ws://localhost:8081`** still works for **`http://VM_IP:3000`** after you **rebuild the frontend image**). You can still set **`wsUrl`** explicitly in **`docker/dashboard-config.js`** (mounted as **`/config.js`**) when the WebSocket host or port differs. Set **`version`** there too if you like; then **`docker compose restart frontend`** — **no image rebuild** for those runtime keys.
 
 For **local Vite dev** (hot reload), run **`npm run frontend`** on the host and point **`VITE_WS_URL`** at the consumer WebSocket as usual.
 

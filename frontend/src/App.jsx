@@ -3,7 +3,7 @@ import QueuePanel from './components/QueuePanel'
 import Header from './components/Header'
 import PublisherStatus from './components/PublisherStatus'
 import PredictionView from './components/PredictionView'
-import { WS_URL, NQ_PREDICTION_CONSUMER } from './config'
+import { getDashboardWsUrl, NQ_PREDICTION_CONSUMER } from './config'
 
 const CANONICAL_NQ_CONSUMER = NQ_PREDICTION_CONSUMER
 const HISTORY_LIMIT = 100
@@ -165,7 +165,9 @@ function App() {
     }
 
     const connect = () => {
-      ws = new WebSocket(WS_URL)
+      const url = getDashboardWsUrl()
+      console.log('WebSocket connecting to', url)
+      ws = new WebSocket(url)
 
       ws.onopen = () => {
         console.log('Connected to consumer backend')

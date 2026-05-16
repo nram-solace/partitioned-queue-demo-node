@@ -24,13 +24,51 @@ export function dashboardVersionLabel() {
   return s.startsWith('v') ? s : `v${s}`
 }
 
-/** WebSocket URL for the consumer + dashboard server (must match `WS_PORT` in demo.env). */
-export const WS_URL =
-  (typeof rt.wsUrl === 'string' && rt.wsUrl.trim() !== ''
-    ? rt.wsUrl.trim()
-    : null) ||
-  import.meta.env.VITE_WS_URL ||
-  'ws://localhost:8081'
+/** Default consumer WebSocket port (must match `WS_PORT` in demo.env / docker). */
+const DASHBOARD_WS_PORT = '8081'
+
+/**
+ * WebSocket URL for the consumer + dashboard server.
+ * Call this when opening the socket (not at module load) so `/config.js` has set `window.__DEMO_CONFIG__` first.
+ * If you open the UI by VM IP/hostname (not localhost) and Vite still has `ws://localhost:8081`, this returns
+ * `ws://<same host as the page>:8081` so the browser hits the mapped consumer port on that machine.
+ */
+export function getDashboardWsUrl() {
+  const rtNow = readRuntimeDashboardConfig()
+  if (typeof rtNow.wsUrl === 'string' && rtNow.wsUrl.trim() !== '') {
+    return rtNow.wsUrl.trim()
+  }
+
+  const fromEnv = typeof import.meta.env.VITE_WS_URL === 'string' ? import.meta.env.VITE_WS_URL.trim() : ''
+  const pageHost =
+    typeof window !== 'undefined' && window.location && typeof window.location.hostname === 'string'
+      ? window.location.hostname
+      : ''
+  const pageIsLoopback = pageHost === 'localhost' || pageHost === '127.0.0.1'
+
+  const rewriteLocalhostToPageHost = (urlStr) => {
+    if (!urlStr || !pageHost || pageIsLoopback) return urlStr
+    try {
+      const normalized = urlStr.startsWith('ws') ? urlStr : `ws://${urlStr}`
+      const u = new URL(normalized)
+      if (u.hostname !== 'localhost' && u.hostname !== '127.0.0.1') return urlStr
+      const port = u.port || DASHBOARD_WS_PORT
+      return `ws://${pageHost}:${port}`
+    } catch {
+      return urlStr
+    }
+  }
+
+  if (fromEnv) {
+    return rewriteLocalhostToPageHost(fromEnv)
+  }
+
+  if (pageHost && !pageIsLoopback) {
+    return `ws://${pageHost}:${DASHBOARD_WS_PORT}`
+  }
+
+  return `ws://localhost:${DASHBOARD_WS_PORT}`
+}
 
 /** NQ prediction chart uses one canonical consumer index (1–5); match backend `NQ_PREDICTION_CONSUMER`. */
 export const NQ_PREDICTION_CONSUMER = parseInt(

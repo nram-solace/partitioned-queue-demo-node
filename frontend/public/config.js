@@ -4,7 +4,7 @@
  * null wsUrl = use Vite VITE_WS_URL or default ws://localhost:8081.
  */
 window.__DEMO_CONFIG__ = {
-  version: '1.1',
-  wsUrl: 'ws://localhost:8081',
+  version: '1.2',
+  wsUrl: null,
   nqPredictionConsumer: 1,
 }
