@@ -15,10 +15,10 @@ export const DASHBOARD_VERSION = (() => {
   if (typeof fromRt === 'number' && Number.isFinite(fromRt)) return String(fromRt)
   const env = import.meta.env.VITE_DASHBOARD_VERSION
   if (typeof env === 'string' && env.trim() !== '') return env.trim()
-  return '1.1'
+  return '1.3'
 })()
 
-/** e.g. `v1.1` for the main title line */
+/** e.g. `v1.3` for the main title line */
 export function dashboardVersionLabel() {
   const s = DASHBOARD_VERSION
   return s.startsWith('v') ? s : `v${s}`
