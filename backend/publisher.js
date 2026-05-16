@@ -63,6 +63,10 @@ class DemoPublisher {
   constructor(profile) {
     this.profile = profile;
     this.session = null;
+    /** When true, start (or restart) publish intervals after Solace session is UP. */
+    this.wantsPublishing = false;
+    /** Resolves `connect()` promise on first UP only. */
+    this.initialConnectResolve = null;
     this.publishRate = parseInt(process.env.PUBLISH_RATE || '10', 10);
     this.orderCounter = { value: 1 };
     this.publishInterval = null;
@@ -132,6 +136,7 @@ class DemoPublisher {
   connect() {
     return new Promise((resolve, reject) => {
       try {
+        this.initialConnectResolve = resolve;
         this.session = solace.SolclientFactory.createSession({
           url: process.env.SOLACE_HOST || 'ws://localhost:8008',
           vpnName: process.env.SOLACE_VPN || 'default',
@@ -141,26 +146,61 @@ class DemoPublisher {
 
         this.session.on(solace.SessionEventCode.UP_NOTICE, () => {
           console.log('✅ Publisher connected to Solace');
-          resolve();
+          if (this.initialConnectResolve) {
+            this.initialConnectResolve();
+            this.initialConnectResolve = null;
+          }
+          if (this.wantsPublishing) {
+            this.ensurePublishIntervals();
+          }
         });
 
         this.session.on(solace.SessionEventCode.CONNECT_FAILED_ERROR, (sessionEvent) => {
           console.error('❌ Connection failed:', sessionEvent.infoStr);
+          this.initialConnectResolve = null;
           reject(new Error(sessionEvent.infoStr));
         });
 
         this.session.on(solace.SessionEventCode.DISCONNECTED, () => {
-          console.log('⚠️  Publisher disconnected');
-          if (this.publishInterval) {
-            clearInterval(this.publishInterval);
-          }
+          console.log('⚠️  Publisher disconnected (pausing publish loop until session is UP again)');
+          this.pausePublishIntervals();
         });
 
         this.session.connect();
       } catch (error) {
+        this.initialConnectResolve = null;
         reject(error);
       }
     });
+  }
+
+  /** Stop publish + stats timers only (session may reconnect; `wantsPublishing` unchanged). */
+  pausePublishIntervals() {
+    if (this.publishInterval) {
+      clearInterval(this.publishInterval);
+      this.publishInterval = null;
+    }
+    if (this.statsInterval) {
+      clearInterval(this.statsInterval);
+      this.statsInterval = null;
+    }
+  }
+
+  /** Start timers when `wantsPublishing` and not already running (used after UP and from `startPublishing`). */
+  ensurePublishIntervals() {
+    if (!this.wantsPublishing || this.publishInterval) {
+      return;
+    }
+    const intervalMs = 1000 / this.publishRate;
+    this.publishInterval = setInterval(() => {
+      const order = this.generateOrder();
+      this.publishOrder(order);
+    }, intervalMs);
+    if (!this.statsInterval) {
+      this.statsInterval = setInterval(() => {
+        this.sendPublisherStats();
+      }, 1000);
+    }
   }
 
   generateOrder() {
@@ -190,6 +230,9 @@ class DemoPublisher {
 
     const pk = order[this.profile.messaging.partitionKeyField];
     try {
+      if (!this.session) {
+        return;
+      }
       this.session.send(message);
       this.publishedCount++;
       if (pk != null && pk !== '') {
@@ -207,28 +250,14 @@ class DemoPublisher {
     console.log(`🚀 Starting publisher - ${this.publishRate} msg/sec`);
     console.log(`📊 Partition keys: ${keys}`);
 
-    const intervalMs = 1000 / this.publishRate;
-
-    this.publishInterval = setInterval(() => {
-      const order = this.generateOrder();
-      this.publishOrder(order);
-    }, intervalMs);
-
-    this.statsInterval = setInterval(() => {
-      this.sendPublisherStats();
-    }, 1000);
+    this.wantsPublishing = true;
+    this.ensurePublishIntervals();
   }
 
   stopPublishing() {
-    if (this.publishInterval) {
-      clearInterval(this.publishInterval);
-      this.publishInterval = null;
-      console.log('⏸️  Publishing stopped');
-    }
-    if (this.statsInterval) {
-      clearInterval(this.statsInterval);
-      this.statsInterval = null;
-    }
+    this.wantsPublishing = false;
+    this.pausePublishIntervals();
+    console.log('⏸️  Publishing stopped');
     this.sendPublisherStats();
   }
 
