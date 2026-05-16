@@ -8,6 +8,34 @@ import { getDashboardWsUrl, NQ_PREDICTION_CONSUMER } from './config'
 const CANONICAL_NQ_CONSUMER = NQ_PREDICTION_CONSUMER
 const HISTORY_LIMIT = 100
 
+/** Published counts since this dashboard WS session (baseline = first publisherStats after connect). */
+function computeSessionPublishedCountBySymbol(publishedCountBySymbol, baseline) {
+  if (!publishedCountBySymbol || typeof publishedCountBySymbol !== 'object') {
+    return {}
+  }
+  if (!baseline) {
+    return {}
+  }
+  const out = {}
+  const keys = new Set([...Object.keys(publishedCountBySymbol), ...Object.keys(baseline)])
+  for (const sym of keys) {
+    const delta = (publishedCountBySymbol[sym] || 0) - (baseline[sym] || 0)
+    if (delta > 0) {
+      out[sym] = delta
+    }
+  }
+  return out
+}
+
+function publisherCountsRegressed(publishedCountBySymbol, baseline) {
+  if (!baseline || !publishedCountBySymbol) {
+    return false
+  }
+  return Object.keys(baseline).some(
+    (sym) => (publishedCountBySymbol[sym] || 0) < (baseline[sym] || 0),
+  )
+}
+
 function deriveQueueNamesFromConsumers(consumers) {
   if (!consumers?.length) return null
   const p = consumers.find((c) => c.queueType === 'partitioned')
@@ -76,6 +104,8 @@ function App() {
     topicName: '',
     publishedCountBySymbol: {},
   })
+  const [sessionPublishedCountBySymbol, setSessionPublishedCountBySymbol] = useState({})
+  const [sessionPublishedCount, setSessionPublishedCount] = useState(0)
 
   const [activeView, setActiveView] = useState('cards')
   const [latestActual, setLatestActual] = useState({})
@@ -83,6 +113,9 @@ function App() {
   const [priceHistory, setPriceHistory] = useState({})
   const predictionsRef = useRef({})
   const lastRollingPublisherCountRef = useRef(-1)
+  /** First `publishedCount` / `publishedCountBySymbol` after WS connect; deltas drive session event labels. */
+  const publishedTotalBaselineRef = useRef(null)
+  const publishedCountBaselineRef = useRef(null)
   /** Mirrors latest publisher `actualPrices` for pairing with prediction WS messages. */
   const latestActualRef = useRef({})
   /** Last time consumer forwarded a `publisherStats` payload (publisher sends ~1 Hz when running). */
@@ -120,6 +153,38 @@ function App() {
 
     const applyPublisherStatsPayload = (data) => {
       lastPublisherStatsAtRef.current = Date.now()
+
+      const publisherRestarted =
+        typeof data.publishedCount === 'number' &&
+        lastRollingPublisherCountRef.current >= 0 &&
+        data.publishedCount < lastRollingPublisherCountRef.current
+
+      if (typeof data.publishedCount === 'number') {
+        if (publisherRestarted || publishedTotalBaselineRef.current === null) {
+          publishedTotalBaselineRef.current = data.publishedCount
+          setSessionPublishedCount(0)
+        } else {
+          setSessionPublishedCount(
+            Math.max(0, data.publishedCount - publishedTotalBaselineRef.current),
+          )
+        }
+      }
+
+      if (data.publishedCountBySymbol && typeof data.publishedCountBySymbol === 'object') {
+        const global = data.publishedCountBySymbol
+        if (publisherRestarted || publisherCountsRegressed(global, publishedCountBaselineRef.current)) {
+          publishedCountBaselineRef.current = { ...global }
+          setSessionPublishedCountBySymbol({})
+        } else if (publishedCountBaselineRef.current === null) {
+          publishedCountBaselineRef.current = { ...global }
+          setSessionPublishedCountBySymbol({})
+        } else {
+          setSessionPublishedCountBySymbol(
+            computeSessionPublishedCountBySymbol(global, publishedCountBaselineRef.current),
+          )
+        }
+      }
+
       setPublisherStats((prev) => ({
         publishedCount: data.publishedCount,
         rate: data.rate,
@@ -171,6 +236,10 @@ function App() {
 
       ws.onopen = () => {
         console.log('Connected to consumer backend')
+        publishedTotalBaselineRef.current = null
+        publishedCountBaselineRef.current = null
+        setSessionPublishedCount(0)
+        setSessionPublishedCountBySymbol({})
         setWsConnected(true)
       }
 
@@ -252,9 +321,13 @@ function App() {
         latestActualRef.current = {}
         lastPublisherStatsAtRef.current = 0
         lastRollingPublisherCountRef.current = -1
+        publishedTotalBaselineRef.current = null
+        publishedCountBaselineRef.current = null
         setLatestActual({})
         setLatestPredictions({})
         setPriceHistory({})
+        setSessionPublishedCount(0)
+        setSessionPublishedCountBySymbol({})
         setPublisherStats({
           publishedCount: 0,
           rate: 0,
@@ -411,7 +484,7 @@ function App() {
       {activeView === 'cards' ? (
         <div className="container mx-auto px-4 py-6 space-y-6">
           <PublisherStatus
-            totalMessages={publisherStats.publishedCount}
+            totalMessages={sessionPublishedCount}
             topicPrefix={profile?.messaging?.topicPrefix}
             topicName={publisherStats.topicName || topicFallback}
             isLive={publisherStatsLive}
@@ -455,7 +528,7 @@ function App() {
           priceHistory={priceHistory}
           latestActual={latestActual}
           latestPredictions={latestPredictions}
-          publishedCountBySymbol={publisherStats.publishedCountBySymbol || {}}
+          publishedCountBySymbol={sessionPublishedCountBySymbol}
         />
       )}
     </div>

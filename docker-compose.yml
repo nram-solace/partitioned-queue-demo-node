@@ -118,7 +118,7 @@ services:
       args:
         VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:8081}
         VITE_NQ_PREDICTION_CONSUMER: ${VITE_NQ_PREDICTION_CONSUMER:-1}
-        VITE_DASHBOARD_VERSION: ${VITE_DASHBOARD_VERSION:-1.1}
+        VITE_DASHBOARD_VERSION: ${VITE_DASHBOARD_VERSION:-1.3}
     image: partitioned-queue-demo-frontend:local
     container_name: demo-frontend
     depends_on:

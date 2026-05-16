@@ -214,7 +214,7 @@ function PredictionCard({ symbol, priceHistory, latestActual, latestPredictions,
       <div className="flex items-center justify-between mb-3">
         <span
           className="text-xl font-bold text-white"
-          title="Total published Solace messages for this partition key (symbol) since publisher start"
+          title="Published messages for this symbol since this dashboard connected (matches the chart window scope)"
         >
           {symbol}
           {eventsSuffix ? (

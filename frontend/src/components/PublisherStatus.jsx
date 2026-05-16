@@ -22,7 +22,13 @@ function PublisherStatus({ totalMessages, topicPrefix, topicName, isLive }) {
       <div className="flex flex-wrap items-baseline justify-between gap-x-6 gap-y-2 text-lg text-white">
         <div className="min-w-0 shrink">
           <span className="font-semibold text-white">Publisher</span>
-          <span className="text-slate-300"> ({eventsPart})</span>
+          <span
+            className="text-slate-300"
+            title="Published messages since this dashboard connected"
+          >
+            {' '}
+            ({eventsPart})
+          </span>
         </div>
         <div
           className="min-w-0 flex-1 text-center text-base sm:text-lg px-2"
