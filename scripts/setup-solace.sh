@@ -88,13 +88,18 @@ post_json_retry() {
   return 1
 }
 
+queue_get_missing() {
+  # SEMP v2 returns 404 on some releases; others return 400 + meta.error.status NOT_FOUND for unknown queue.
+  [ "$1" = "404" ] || { [ "$1" = "400" ] && jq -e '.meta.error.status == "NOT_FOUND"' /tmp/semp_body.json >/dev/null 2>&1; }
+}
+
 ensure_queue() {
   name="$1"
   access="$2"
   partitions="$3"
 
   code=$(http_code "${SEMP_BASE}/queues/${name}")
-  if [ "$code" = "404" ]; then
+  if queue_get_missing "$code"; then
     echo "Creating queue ${name} (accessType=${access}, partitionCount=${partitions:-0})..."
     if [ -n "$partitions" ] && [ "$partitions" != "0" ]; then
       pc=", \"partitionCount\": ${partitions}"

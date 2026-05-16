@@ -1,7 +1,8 @@
 import { motion } from 'framer-motion'
+import { dashboardVersionLabel } from '../config'
 
 function Header({ connected, profile, activeView, onViewChange, showPrediction }) {
-  const primaryTitle = 'Solace Queue Types Demo'
+  const primaryTitle = `Solace Queue Types Demo - ${dashboardVersionLabel()}`
   const profileTitle = profile?.branding?.appTitle?.trim() || null
 
   return (

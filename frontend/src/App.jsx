@@ -3,9 +3,9 @@ import QueuePanel from './components/QueuePanel'
 import Header from './components/Header'
 import PublisherStatus from './components/PublisherStatus'
 import PredictionView from './components/PredictionView'
-import { WS_URL } from './config'
+import { WS_URL, NQ_PREDICTION_CONSUMER } from './config'
 
-const CANONICAL_NQ_CONSUMER = parseInt(import.meta.env.VITE_NQ_PREDICTION_CONSUMER || '1', 10)
+const CANONICAL_NQ_CONSUMER = NQ_PREDICTION_CONSUMER
 const HISTORY_LIMIT = 100
 
 function deriveQueueNamesFromConsumers(consumers) {

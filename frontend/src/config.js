@@ -1,5 +1,46 @@
+/** @returns {Record<string, unknown>} */
+function readRuntimeDashboardConfig() {
+  if (typeof window === 'undefined') return {}
+  const c = window.__DEMO_CONFIG__
+  if (!c || typeof c !== 'object') return {}
+  return c
+}
+
+const rt = readRuntimeDashboardConfig()
+
+/** Shown in the dashboard header; set in `public/config.js` / `docker/dashboard-config.js` as `version`, or `VITE_DASHBOARD_VERSION`. */
+export const DASHBOARD_VERSION = (() => {
+  const fromRt = rt.version
+  if (typeof fromRt === 'string' && fromRt.trim() !== '') return fromRt.trim()
+  if (typeof fromRt === 'number' && Number.isFinite(fromRt)) return String(fromRt)
+  const env = import.meta.env.VITE_DASHBOARD_VERSION
+  if (typeof env === 'string' && env.trim() !== '') return env.trim()
+  return '1.1'
+})()
+
+/** e.g. `v1.1` for the main title line */
+export function dashboardVersionLabel() {
+  const s = DASHBOARD_VERSION
+  return s.startsWith('v') ? s : `v${s}`
+}
+
 /** WebSocket URL for the consumer + dashboard server (must match `WS_PORT` in demo.env). */
-export const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8081'
+export const WS_URL =
+  (typeof rt.wsUrl === 'string' && rt.wsUrl.trim() !== ''
+    ? rt.wsUrl.trim()
+    : null) ||
+  import.meta.env.VITE_WS_URL ||
+  'ws://localhost:8081'
+
+/** NQ prediction chart uses one canonical consumer index (1–5); match backend `NQ_PREDICTION_CONSUMER`. */
+export const NQ_PREDICTION_CONSUMER = parseInt(
+  (rt.nqPredictionConsumer != null && rt.nqPredictionConsumer !== ''
+    ? String(rt.nqPredictionConsumer)
+    : '') ||
+    import.meta.env.VITE_NQ_PREDICTION_CONSUMER ||
+    '1',
+  10,
+)
 
 /**
  * Legacy split caps (no longer used for PQ vs NQ chart bars — those share {@link CHART_ACCURACY_SHARED_MAX_GAP_PERCENT}
