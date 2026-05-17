@@ -1,5 +1,4 @@
 const solace = require('solclientjs');
-const WebSocket = require('ws');
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '..', 'demo.env') });
 
@@ -10,6 +9,8 @@ const {
   warnLegacyEnvIgnoredOnce,
   isPricePredictionEnabled,
 } = require('./lib/demoProfile');
+const { CatalogUiSession } = require('./lib/uiPublisher');
+const { slimProfile } = require('./lib/catalogPayload');
 
 // Initialize Solace factory
 const factoryProps = new solace.SolclientFactoryProperties();
@@ -21,8 +22,7 @@ class ConsumerManager {
   constructor(profile) {
     this.profile = profile;
     this.consumers = [];
-    this.wsServer = null;
-    this.clients = new Set();
+    this.uiSession = new CatalogUiSession(profile.id);
     this.partitionState = 'unknown'; // States: unknown, balanced, rebalancing
     this.partitionedState = 'unknown'; // States: unknown, healthy, degraded, down
     this.nonExclusiveState = 'unknown'; // States: unknown, healthy, degraded, down
@@ -51,83 +51,15 @@ class ConsumerManager {
     };
   }
 
-  startWebSocketServer(port = process.env.WS_PORT || 8081) {
-    const bindHost = process.env.WS_BIND_HOST;
-    const opts = { port: Number(port) };
-    if (bindHost) {
-      opts.host = bindHost;
-    }
-    this.wsServer = new WebSocket.Server(opts);
-
-    this.wsServer.on('connection', (ws) => {
-      console.log('📱 Dashboard connected');
-      this.clients.add(ws);
-
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(
-          JSON.stringify({
-            type: 'demoProfile',
-            profile: this.profile,
-            queueNames: this.getQueueNames(),
-          }),
-        );
-      }
-
-      ws.on('message', (message) => {
-        try {
-          const data = JSON.parse(message);
-          if (data.type === 'disconnect') {
-            this.handleDisconnectRequest(data.consumerId);
-          } else if (data.type === 'reconnect') {
-            this.handleReconnectRequest(data.consumerId);
-          } else if (data.type === 'publisherStats') {
-            // Receive publisher stats and broadcast to all dashboards
-            this.publisherStats = {
-              publishedCount: data.publishedCount,
-              rate: data.rate,
-              topicName: data.topicName || '',
-              ...(data.actualPrices && typeof data.actualPrices === 'object'
-                ? { actualPrices: data.actualPrices }
-                : {}),
-              ...(data.publishedCountBySymbol && typeof data.publishedCountBySymbol === 'object'
-                ? { publishedCountBySymbol: { ...data.publishedCountBySymbol } }
-                : {}),
-            };
-            this.broadcast({
-              type: 'publisherStats',
-              ...this.publisherStats
-            });
-          }
-        } catch (error) {
-          console.error('❌ Error handling WebSocket message:', error);
-        }
-      });
-
-      ws.on('close', () => {
-        console.log('📱 Dashboard disconnected');
-        this.clients.delete(ws);
-      });
-
-      // Send current state to new client
-      this.sendStateToClient(ws);
-    });
-
-    console.log(`🌐 WebSocket server listening on port ${port}`);
-  }
-
   broadcast(message) {
-    const data = JSON.stringify(message);
-    this.clients.forEach(client => {
-      if (client.readyState === WebSocket.OPEN) {
-        client.send(data);
-      }
-    });
+    this.uiSession.publishEvent(message);
   }
 
-  sendStateToClient(client) {
-    const state = {
+  buildStatePayload() {
+    return {
       type: 'state',
-      consumers: this.consumers.map(c => ({
+      profile: slimProfile(this.profile),
+      consumers: this.consumers.map((c) => ({
         id: c.id,
         queueName: c.queueName,
         queueType: c.queueType,
@@ -135,7 +67,7 @@ class ConsumerManager {
         status: c.status,
         messagesProcessed: c.messagesProcessed,
         lastOrders: c.lastOrders,
-        assignedPartitionKey: c.assignedPartitionKey
+        assignedPartitionKey: c.assignedPartitionKey,
       })),
       partitionState: this.partitionState,
       partitionedState: this.partitionedState,
@@ -145,10 +77,21 @@ class ConsumerManager {
       publisherStats: this.publisherStats,
       queueNames: this.getQueueNames(),
     };
+  }
 
-    if (client.readyState === WebSocket.OPEN) {
-      client.send(JSON.stringify(state));
-    }
+  publishStateSnapshot() {
+    this.broadcast(this.buildStatePayload());
+  }
+
+  /** Catalog + full state for browsers that connect after consumer startup (non-retained topics). */
+  publishDashboardSnapshot() {
+    this.uiSession.publishCatalog(this.profile, this.getQueueNames());
+    this.checkPartitionState();
+    this.checkPartitionedOperationalState();
+    this.checkNonExclusiveState();
+    this.checkExclusiveState();
+    this.publishStateSnapshot();
+    console.log('📋 Published dashboard snapshot (catalog + state) on request');
   }
 
   handleDisconnectRequest(consumerId) {
@@ -413,16 +356,27 @@ class ConsumerManager {
   }
 
   async start() {
-    this.startWebSocketServer();
+    await this.uiSession.connect({
+      onCommand: (data) => {
+        if (data.type === 'disconnect') {
+          this.handleDisconnectRequest(data.consumerId);
+        } else if (data.type === 'reconnect') {
+          void this.handleReconnectRequest(data.consumerId);
+        } else if (data.type === 'requestSnapshot') {
+          this.publishDashboardSnapshot();
+        }
+      },
+    });
+    this.uiSession.publishCatalog(this.profile, this.getQueueNames());
+    console.log('📋 Published UI catalog to solace/catalog/profiles');
     await this.createConsumers();
-    console.log('✅ All consumers started');
+    this.publishStateSnapshot();
+    console.log('✅ All consumers started (UI on Solace catalog topics)');
   }
 
   stop() {
-    this.consumers.forEach(c => c.disconnect());
-    if (this.wsServer) {
-      this.wsServer.close();
-    }
+    this.consumers.forEach((c) => c.disconnect());
+    this.uiSession.disconnect();
   }
 }
 

@@ -15,59 +15,77 @@ export const DASHBOARD_VERSION = (() => {
   if (typeof fromRt === 'number' && Number.isFinite(fromRt)) return String(fromRt)
   const env = import.meta.env.VITE_DASHBOARD_VERSION
   if (typeof env === 'string' && env.trim() !== '') return env.trim()
-  return '1.3'
+  return '2.1'
 })()
 
-/** e.g. `v1.3` for the main title line */
+/** e.g. `v2.1` for the main title line */
 export function dashboardVersionLabel() {
   const s = DASHBOARD_VERSION
   return s.startsWith('v') ? s : `v${s}`
 }
 
-/** Default consumer WebSocket port (must match `WS_PORT` in demo.env / docker). */
-const DASHBOARD_WS_PORT = '8081'
+const DEFAULT_SOLACE_WS_PORT = '8008'
+
+function pageHostname() {
+  if (typeof window === 'undefined' || !window.location?.hostname) return ''
+  return window.location.hostname
+}
+
+function pageIsLoopback() {
+  const h = pageHostname()
+  return h === 'localhost' || h === '127.0.0.1'
+}
+
+/** Rewrite ws://localhost:port → ws://<page host>:port for remote VM dashboards. */
+function rewriteLocalhostWsUrl(urlStr, defaultPort = DEFAULT_SOLACE_WS_PORT) {
+  const pageHost = pageHostname()
+  if (!urlStr || !pageHost || pageIsLoopback()) return urlStr
+  try {
+    const normalized = urlStr.startsWith('ws') ? urlStr : `ws://${urlStr}`
+    const u = new URL(normalized)
+    if (u.hostname !== 'localhost' && u.hostname !== '127.0.0.1') return urlStr
+    const port = u.port || defaultPort
+    return `ws://${pageHost}:${port}`
+  } catch {
+    return urlStr
+  }
+}
 
 /**
- * WebSocket URL for the consumer + dashboard server.
- * Call this when opening the socket (not at module load) so `/config.js` has set `window.__DEMO_CONFIG__` first.
- * If you open the UI by VM IP/hostname (not localhost) and Vite still has `ws://localhost:8081`, this returns
- * `ws://<same host as the page>:8081` so the browser hits the mapped consumer port on that machine.
+ * Solace Web Transport session settings for the dashboard (catalog control plane).
+ * Call at connect time so `/config.js` has set `window.__DEMO_CONFIG__`.
  */
-export function getDashboardWsUrl() {
+export function getSolaceSessionConfig() {
   const rtNow = readRuntimeDashboardConfig()
-  if (typeof rtNow.wsUrl === 'string' && rtNow.wsUrl.trim() !== '') {
-    return rtNow.wsUrl.trim()
+  const fromRt = typeof rtNow.solaceUrl === 'string' ? rtNow.solaceUrl.trim() : ''
+  const fromEnv =
+    typeof import.meta.env.VITE_SOLACE_URL === 'string' ? import.meta.env.VITE_SOLACE_URL.trim() : ''
+  const url = rewriteLocalhostWsUrl(fromRt || fromEnv || 'ws://localhost:8008')
+
+  const vpnName =
+    (typeof rtNow.solaceVpn === 'string' && rtNow.solaceVpn.trim()) ||
+    (typeof import.meta.env.VITE_SOLACE_VPN === 'string' && import.meta.env.VITE_SOLACE_VPN.trim()) ||
+    'default'
+
+  const userName =
+    (typeof rtNow.solaceUsername === 'string' && rtNow.solaceUsername.trim()) ||
+    (typeof import.meta.env.VITE_SOLACE_USERNAME === 'string' &&
+      import.meta.env.VITE_SOLACE_USERNAME.trim()) ||
+    'default'
+
+  const password =
+    (typeof rtNow.solacePassword === 'string' && rtNow.solacePassword) ||
+    (typeof import.meta.env.VITE_SOLACE_PASSWORD === 'string' && import.meta.env.VITE_SOLACE_PASSWORD) ||
+    'default'
+
+  let hint = url
+  try {
+    hint = new URL(url).host
+  } catch {
+    /* keep full url */
   }
 
-  const fromEnv = typeof import.meta.env.VITE_WS_URL === 'string' ? import.meta.env.VITE_WS_URL.trim() : ''
-  const pageHost =
-    typeof window !== 'undefined' && window.location && typeof window.location.hostname === 'string'
-      ? window.location.hostname
-      : ''
-  const pageIsLoopback = pageHost === 'localhost' || pageHost === '127.0.0.1'
-
-  const rewriteLocalhostToPageHost = (urlStr) => {
-    if (!urlStr || !pageHost || pageIsLoopback) return urlStr
-    try {
-      const normalized = urlStr.startsWith('ws') ? urlStr : `ws://${urlStr}`
-      const u = new URL(normalized)
-      if (u.hostname !== 'localhost' && u.hostname !== '127.0.0.1') return urlStr
-      const port = u.port || DASHBOARD_WS_PORT
-      return `ws://${pageHost}:${port}`
-    } catch {
-      return urlStr
-    }
-  }
-
-  if (fromEnv) {
-    return rewriteLocalhostToPageHost(fromEnv)
-  }
-
-  if (pageHost && !pageIsLoopback) {
-    return `ws://${pageHost}:${DASHBOARD_WS_PORT}`
-  }
-
-  return `ws://localhost:${DASHBOARD_WS_PORT}`
+  return { url, vpnName, userName, password, hint }
 }
 
 /** NQ prediction chart uses one canonical consumer index (1–5); match backend `NQ_PREDICTION_CONSUMER`. */

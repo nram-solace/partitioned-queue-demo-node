@@ -1,11 +1,14 @@
 /**
- * Dashboard WebSocket + UI tuning for Docker deployments.
- * Edit wsUrl when users open the UI from another machine (browser must reach consumer on the host).
- * Example: wsUrl: 'ws://20.51.158.49:8081'
- * This file is bind-mounted over /usr/share/nginx/html/config.js — restart the frontend container after edits.
+ * Dashboard Solace Web Transport for Docker / public VM deployments.
+ * Edit solaceUrl when users open the UI from another machine (browser must reach broker :8008).
+ * Example: solaceUrl: 'ws://20.51.158.49:8008'
+ * Bind-mounted over /usr/share/nginx/html/config.js — restart frontend after edits.
  */
 window.__DEMO_CONFIG__ = {
-  version: '1.3',
-  wsUrl: null,
+  version: '2.1',
+  solaceUrl: null,
+  solaceVpn: null,
+  solaceUsername: null,
+  solacePassword: null,
   nqPredictionConsumer: null,
 }

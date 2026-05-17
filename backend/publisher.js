@@ -1,5 +1,4 @@
 const solace = require('solclientjs');
-const WebSocket = require('ws');
 const path = require('path');
 require('dotenv').config({ path: path.resolve(__dirname, '..', 'demo.env') });
 
@@ -13,6 +12,9 @@ const {
   warnLegacyEnvIgnoredOnce,
   isPricePredictionEnabled,
 } = require('./lib/demoProfile');
+const { wrapUiEnvelope } = require('./lib/uiEnvelope');
+const { statsPublisher } = require('./lib/uiTopics');
+const { attachJsonPayload } = require('./lib/catalogPayload');
 
 function gaussianRandom() {
   let u = 0;
@@ -74,7 +76,6 @@ class DemoPublisher {
     this.publishedCount = 0;
     /** Partition key (e.g. symbol) → number of messages published for that key. */
     this.publishedCountBySymbol = {};
-    this.wsClient = null;
 
     this.pricePrediction = isPricePredictionEnabled(profile);
     this.symbolPredictionConfig = this.pricePrediction ? buildSymbolPredictionConfig(profile) : null;
@@ -86,50 +87,31 @@ class DemoPublisher {
     }
   }
 
-  connectToWebSocket() {
-    const wsUrl = (process.env.WS_URL || '').trim();
-    const url =
-      wsUrl ||
-      (() => {
-        const host = (process.env.WS_HOST || 'localhost').trim();
-        const port = String(process.env.WS_PORT || '8081').trim();
-        return `ws://${host}:${port}`;
-      })();
-
-    try {
-      this.wsClient = new WebSocket(url);
-
-      this.wsClient.on('open', () => {
-        console.log('📡 Connected to WebSocket server');
-      });
-
-      this.wsClient.on('error', (error) => {
-        console.warn('⚠️  WebSocket connection failed:', error.message);
-      });
-
-      this.wsClient.on('close', () => {
-        console.log('📡 WebSocket disconnected, attempting reconnect...');
-        setTimeout(() => this.connectToWebSocket(), 3000);
-      });
-    } catch (error) {
-      console.warn('⚠️  Could not connect to WebSocket:', error.message);
-    }
-  }
-
   sendPublisherStats() {
-    if (this.wsClient && this.wsClient.readyState === WebSocket.OPEN) {
-      const topicPrefix = this.profile.messaging.topicPrefix;
-      const payload = {
-        type: 'publisherStats',
-        publishedCount: this.publishedCount,
-        rate: this.publishRate,
-        topicName: `${topicPrefix}/>`,
-        publishedCountBySymbol: { ...this.publishedCountBySymbol },
-      };
-      if (this.pricePrediction && this.currentPrices) {
-        payload.actualPrices = { ...this.currentPrices };
-      }
-      this.wsClient.send(JSON.stringify(payload));
+    if (!this.session) {
+      return;
+    }
+    const topicPrefix = this.profile.messaging.topicPrefix;
+    const payload = wrapUiEnvelope(this.profile.id, {
+      type: 'publisherStats',
+      publishedCount: this.publishedCount,
+      rate: this.publishRate,
+      topicName: `${topicPrefix}/>`,
+      publishedCountBySymbol: { ...this.publishedCountBySymbol },
+      ...(this.pricePrediction && this.currentPrices
+        ? { actualPrices: { ...this.currentPrices } }
+        : {}),
+    });
+    const message = solace.SolclientFactory.createMessage();
+    message.setDestination(
+      solace.SolclientFactory.createTopicDestination(statsPublisher(this.profile.id)),
+    );
+    attachJsonPayload(message, payload);
+    message.setDeliveryMode(solace.MessageDeliveryModeType.DIRECT);
+    try {
+      this.session.send(message);
+    } catch (error) {
+      console.warn('⚠️  Failed to publish publisherStats to catalog topic:', error.message);
     }
   }
 
@@ -282,7 +264,6 @@ async function main() {
 
   try {
     await publisher.connect();
-    publisher.connectToWebSocket();
     publisher.startPublishing();
 
     process.on('SIGINT', () => {

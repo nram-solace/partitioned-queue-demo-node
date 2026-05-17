@@ -1,14 +1,15 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import QueuePanel from './components/QueuePanel'
 import Header from './components/Header'
 import PublisherStatus from './components/PublisherStatus'
 import PredictionView from './components/PredictionView'
-import { getDashboardWsUrl, NQ_PREDICTION_CONSUMER } from './config'
+import { NQ_PREDICTION_CONSUMER } from './config'
+import { useSolaceDashboard } from './hooks/useSolaceDashboard'
+import { deriveQueueNamesFromConsumers, handleDashboardMessage } from './dashboardMessages'
 
 const CANONICAL_NQ_CONSUMER = NQ_PREDICTION_CONSUMER
 const HISTORY_LIMIT = 100
 
-/** Published counts since this dashboard WS session (baseline = first publisherStats after connect). */
 function computeSessionPublishedCountBySymbol(publishedCountBySymbol, baseline) {
   if (!publishedCountBySymbol || typeof publishedCountBySymbol !== 'object') {
     return {}
@@ -34,19 +35,6 @@ function publisherCountsRegressed(publishedCountBySymbol, baseline) {
   return Object.keys(baseline).some(
     (sym) => (publishedCountBySymbol[sym] || 0) < (baseline[sym] || 0),
   )
-}
-
-function deriveQueueNamesFromConsumers(consumers) {
-  if (!consumers?.length) return null
-  const p = consumers.find((c) => c.queueType === 'partitioned')
-  const n = consumers.find((c) => c.queueType === 'non-exclusive')
-  const e = consumers.find((c) => c.queueType === 'exclusive')
-  if (!p || !n || !e) return null
-  return {
-    partitioned: p.queueName,
-    nonExclusive: n.queueName,
-    exclusive: e.queueName,
-  }
 }
 
 function App() {
@@ -93,7 +81,6 @@ function App() {
       })),
   })
 
-  const [wsConnected, setWsConnected] = useState(false)
   const [partitionState, setPartitionState] = useState('unknown')
   const [partitionedState, setPartitionedState] = useState('unknown')
   const [nonExclusiveState, setNonExclusiveState] = useState('unknown')
@@ -113,251 +100,91 @@ function App() {
   const [priceHistory, setPriceHistory] = useState({})
   const predictionsRef = useRef({})
   const lastRollingPublisherCountRef = useRef(-1)
-  /** First `publishedCount` / `publishedCountBySymbol` after WS connect; deltas drive session event labels. */
   const publishedTotalBaselineRef = useRef(null)
   const publishedCountBaselineRef = useRef(null)
-  /** Mirrors latest publisher `actualPrices` for pairing with prediction WS messages. */
   const latestActualRef = useRef({})
-  /** Last time consumer forwarded a `publisherStats` payload (publisher sends ~1 Hz when running). */
   const lastPublisherStatsAtRef = useRef(0)
   const [publisherStatsLive, setPublisherStatsLive] = useState(false)
 
-  useEffect(() => {
-    if (!profile) return
-    const t = profile.branding?.documentTitle || profile.branding?.appTitle
-    if (t) {
-      document.title = t
-    }
-    if (!profile.features?.pricePrediction) {
-      setActiveView('cards')
-    }
-  }, [profile])
+  const applyPublisherStatsPayload = useCallback((data) => {
+    lastPublisherStatsAtRef.current = Date.now()
 
-  /** Publisher is considered live if stats arrive regularly while the dashboard WS is up. */
-  useEffect(() => {
-    if (!wsConnected) {
-      setPublisherStatsLive(false)
-      return
-    }
-    const staleMs = 4500
-    const id = setInterval(() => {
-      const last = lastPublisherStatsAtRef.current
-      setPublisherStatsLive(last > 0 && Date.now() - last < staleMs)
-    }, 400)
-    return () => clearInterval(id)
-  }, [wsConnected])
+    const publisherRestarted =
+      typeof data.publishedCount === 'number' &&
+      lastRollingPublisherCountRef.current >= 0 &&
+      data.publishedCount < lastRollingPublisherCountRef.current
 
-  useEffect(() => {
-    let ws = null
-    let reconnectTimeout = null
-
-    const applyPublisherStatsPayload = (data) => {
-      lastPublisherStatsAtRef.current = Date.now()
-
-      const publisherRestarted =
-        typeof data.publishedCount === 'number' &&
-        lastRollingPublisherCountRef.current >= 0 &&
-        data.publishedCount < lastRollingPublisherCountRef.current
-
-      if (typeof data.publishedCount === 'number') {
-        if (publisherRestarted || publishedTotalBaselineRef.current === null) {
-          publishedTotalBaselineRef.current = data.publishedCount
-          setSessionPublishedCount(0)
-        } else {
-          setSessionPublishedCount(
-            Math.max(0, data.publishedCount - publishedTotalBaselineRef.current),
-          )
-        }
+    if (typeof data.publishedCount === 'number') {
+      if (publisherRestarted || publishedTotalBaselineRef.current === null) {
+        publishedTotalBaselineRef.current = data.publishedCount
+        setSessionPublishedCount(0)
+      } else {
+        setSessionPublishedCount(
+          Math.max(0, data.publishedCount - publishedTotalBaselineRef.current),
+        )
       }
+    }
 
-      if (data.publishedCountBySymbol && typeof data.publishedCountBySymbol === 'object') {
-        const global = data.publishedCountBySymbol
-        if (publisherRestarted || publisherCountsRegressed(global, publishedCountBaselineRef.current)) {
-          publishedCountBaselineRef.current = { ...global }
-          setSessionPublishedCountBySymbol({})
-        } else if (publishedCountBaselineRef.current === null) {
-          publishedCountBaselineRef.current = { ...global }
-          setSessionPublishedCountBySymbol({})
-        } else {
-          setSessionPublishedCountBySymbol(
-            computeSessionPublishedCountBySymbol(global, publishedCountBaselineRef.current),
-          )
-        }
+    if (data.publishedCountBySymbol && typeof data.publishedCountBySymbol === 'object') {
+      const global = data.publishedCountBySymbol
+      if (publisherRestarted || publisherCountsRegressed(global, publishedCountBaselineRef.current)) {
+        publishedCountBaselineRef.current = { ...global }
+        setSessionPublishedCountBySymbol({})
+      } else if (publishedCountBaselineRef.current === null) {
+        publishedCountBaselineRef.current = { ...global }
+        setSessionPublishedCountBySymbol({})
+      } else {
+        setSessionPublishedCountBySymbol(
+          computeSessionPublishedCountBySymbol(global, publishedCountBaselineRef.current),
+        )
       }
+    }
 
-      setPublisherStats((prev) => ({
-        publishedCount: data.publishedCount,
-        rate: data.rate,
-        topicName: data.topicName || '',
-        ...(data.actualPrices && typeof data.actualPrices === 'object'
-          ? { actualPrices: data.actualPrices }
+    setPublisherStats((prev) => ({
+      publishedCount: data.publishedCount,
+      rate: data.rate,
+      topicName: data.topicName || '',
+      ...(data.actualPrices && typeof data.actualPrices === 'object'
+        ? { actualPrices: data.actualPrices }
+        : {}),
+      ...(data.publishedCountBySymbol && typeof data.publishedCountBySymbol === 'object'
+        ? { publishedCountBySymbol: data.publishedCountBySymbol }
+        : prev.publishedCountBySymbol && Object.keys(prev.publishedCountBySymbol).length > 0
+          ? { publishedCountBySymbol: prev.publishedCountBySymbol }
           : {}),
-        ...(data.publishedCountBySymbol && typeof data.publishedCountBySymbol === 'object'
-          ? { publishedCountBySymbol: data.publishedCountBySymbol }
-          : prev.publishedCountBySymbol && Object.keys(prev.publishedCountBySymbol).length > 0
-            ? { publishedCountBySymbol: prev.publishedCountBySymbol }
-            : {}),
-      }))
-      if (data.actualPrices && typeof data.actualPrices === 'object') {
-        const pc = data.publishedCount
-        if (typeof pc === 'number' && pc === lastRollingPublisherCountRef.current) {
-          return
-        }
-        if (typeof pc === 'number') {
-          lastRollingPublisherCountRef.current = pc
-        }
+    }))
+    if (data.actualPrices && typeof data.actualPrices === 'object') {
+      const pc = data.publishedCount
+      if (typeof pc === 'number' && pc === lastRollingPublisherCountRef.current) {
+        return
+      }
+      if (typeof pc === 'number') {
+        lastRollingPublisherCountRef.current = pc
+      }
 
-        setLatestActual(data.actualPrices)
-        latestActualRef.current = { ...data.actualPrices }
-        const timestamp = Date.now()
-        setPriceHistory((prev) => {
-          const next = { ...prev }
-          Object.entries(data.actualPrices).forEach(([symbol, actual]) => {
-            const preds = predictionsRef.current[symbol] || {}
-            const point = {
-              time: timestamp,
-              actual,
-              pq: preds.pq ?? null,
-              nq: preds.nq ?? null,
-            }
-            const history = [...(next[symbol] || []), point]
-            if (history.length > HISTORY_LIMIT) history.shift()
-            next[symbol] = history
-          })
-          return next
+      setLatestActual(data.actualPrices)
+      latestActualRef.current = { ...data.actualPrices }
+      const timestamp = Date.now()
+      setPriceHistory((prev) => {
+        const next = { ...prev }
+        Object.entries(data.actualPrices).forEach(([symbol, actual]) => {
+          const preds = predictionsRef.current[symbol] || {}
+          const point = {
+            time: timestamp,
+            actual,
+            pq: preds.pq ?? null,
+            nq: preds.nq ?? null,
+          }
+          const history = [...(next[symbol] || []), point]
+          if (history.length > HISTORY_LIMIT) history.shift()
+          next[symbol] = history
         })
-      }
-    }
-
-    const connect = () => {
-      const url = getDashboardWsUrl()
-      console.log('WebSocket connecting to', url)
-      ws = new WebSocket(url)
-
-      ws.onopen = () => {
-        console.log('Connected to consumer backend')
-        publishedTotalBaselineRef.current = null
-        publishedCountBaselineRef.current = null
-        setSessionPublishedCount(0)
-        setSessionPublishedCountBySymbol({})
-        setWsConnected(true)
-      }
-
-      ws.onmessage = (event) => {
-        const data = JSON.parse(event.data)
-
-        if (data.type === 'demoProfile') {
-          setProfile(data.profile)
-          if (data.queueNames) {
-            setQueueNames(data.queueNames)
-          }
-          return
-        }
-
-        if (data.type === 'order') {
-          updateConsumer(data)
-        } else if (data.type === 'prediction') {
-          if (data.queueType === 'non-exclusive' && data.consumerNumber !== CANONICAL_NQ_CONSUMER) {
-            return
-          }
-          const field = data.queueType === 'partitioned' ? 'pq' : 'nq'
-          if (!predictionsRef.current[data.symbol]) predictionsRef.current[data.symbol] = {}
-          predictionsRef.current[data.symbol][field] = data.predictedPrice
-          setLatestPredictions((prev) => ({
-            ...prev,
-            [data.symbol]: { ...prev[data.symbol], [field]: data.predictedPrice },
-          }))
-        } else if (data.type === 'status') {
-          updateConsumerStatus(data)
-        } else if (data.type === 'state') {
-          if (data.queueNames) {
-            setQueueNames(data.queueNames)
-          } else {
-            const derived = deriveQueueNamesFromConsumers(data.consumers)
-            if (derived) setQueueNames(derived)
-          }
-          updateConsumersFromState(data.consumers)
-          if (data.partitionState) {
-            setPartitionState(data.partitionState)
-          }
-          if (data.partitionedState) {
-            setPartitionedState(data.partitionedState)
-          }
-          if (data.nonExclusiveState) {
-            setNonExclusiveState(data.nonExclusiveState)
-          }
-          if (data.exclusiveState) {
-            setExclusiveState(data.exclusiveState)
-          }
-          if (data.publisherStats) {
-            applyPublisherStatsPayload(data.publisherStats)
-          }
-        } else if (data.type === 'publisherStats') {
-          applyPublisherStatsPayload(data)
-        } else if (data.type === 'partitionState') {
-          setPartitionState(data.state)
-        } else if (data.type === 'queueState') {
-          if (data.queueType === 'partitioned') {
-            setPartitionedState(data.state)
-          } else if (data.queueType === 'non-exclusive') {
-            setNonExclusiveState(data.state)
-          } else if (data.queueType === 'exclusive') {
-            setExclusiveState(data.state)
-          }
-        }
-      }
-
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error)
-        setWsConnected(false)
-      }
-
-      ws.onclose = () => {
-        console.log('Disconnected from consumer backend')
-        setWsConnected(false)
-        setProfile(null)
-        setQueueNames(null)
-        predictionsRef.current = {}
-        latestActualRef.current = {}
-        lastPublisherStatsAtRef.current = 0
-        lastRollingPublisherCountRef.current = -1
-        publishedTotalBaselineRef.current = null
-        publishedCountBaselineRef.current = null
-        setLatestActual({})
-        setLatestPredictions({})
-        setPriceHistory({})
-        setSessionPublishedCount(0)
-        setSessionPublishedCountBySymbol({})
-        setPublisherStats({
-          publishedCount: 0,
-          rate: 0,
-          topicName: '',
-          publishedCountBySymbol: {},
-        })
-        setActiveView('cards')
-        reconnectTimeout = setTimeout(() => {
-          console.log('Attempting to reconnect...')
-          connect()
-        }, 3000)
-      }
-
-      window.wsConnection = ws
-    }
-
-    connect()
-
-    return () => {
-      if (reconnectTimeout) {
-        clearTimeout(reconnectTimeout)
-      }
-      if (ws) {
-        ws.close()
-      }
-      window.wsConnection = null
+        return next
+      })
     }
   }, [])
 
-  const updateConsumer = (data) => {
+  const updateConsumer = useCallback((data) => {
     setConsumers((prev) => {
       const newConsumers = { ...prev }
       const queueKey =
@@ -383,9 +210,9 @@ function App() {
 
       return newConsumers
     })
-  }
+  }, [])
 
-  const updateConsumerStatus = (data) => {
+  const updateConsumerStatus = useCallback((data) => {
     setConsumers((prev) => {
       const newConsumers = { ...prev }
       const queueKey =
@@ -406,9 +233,9 @@ function App() {
 
       return newConsumers
     })
-  }
+  }, [])
 
-  const updateConsumersFromState = (stateConsumers) => {
+  const updateConsumersFromState = useCallback((stateConsumers) => {
     setConsumers((prev) => {
       const newConsumers = { ...prev }
       stateConsumers.forEach((consumer) => {
@@ -433,28 +260,128 @@ function App() {
       })
       return newConsumers
     })
-  }
+  }, [])
+
+  const resetSessionBaselines = useCallback(() => {
+    publishedTotalBaselineRef.current = null
+    publishedCountBaselineRef.current = null
+    setSessionPublishedCount(0)
+    setSessionPublishedCountBySymbol({})
+  }, [])
+
+  const resetPredictionState = useCallback(() => {
+    predictionsRef.current = {}
+    latestActualRef.current = {}
+    lastPublisherStatsAtRef.current = 0
+    lastRollingPublisherCountRef.current = -1
+    setLatestActual({})
+    setLatestPredictions({})
+    setPriceHistory({})
+    setPublisherStats({
+      publishedCount: 0,
+      rate: 0,
+      topicName: '',
+      publishedCountBySymbol: {},
+    })
+    setActiveView('cards')
+  }, [])
+
+  const onDashboardMessage = useCallback(
+    (data) => {
+      handleDashboardMessage(data, {
+        canonicalNqConsumer: CANONICAL_NQ_CONSUMER,
+        onDemoProfile: (msg) => {
+          setProfile(msg.profile)
+          if (msg.queueNames) setQueueNames(msg.queueNames)
+        },
+        onOrder: updateConsumer,
+        onPrediction: (msg) => {
+          const field = msg.queueType === 'partitioned' ? 'pq' : 'nq'
+          if (!predictionsRef.current[msg.symbol]) predictionsRef.current[msg.symbol] = {}
+          predictionsRef.current[msg.symbol][field] = msg.predictedPrice
+          setLatestPredictions((prev) => ({
+            ...prev,
+            [msg.symbol]: { ...prev[msg.symbol], [field]: msg.predictedPrice },
+          }))
+        },
+        onStatus: updateConsumerStatus,
+        onState: (msg) => {
+          if (msg.profile) setProfile(msg.profile)
+          if (msg.queueNames) {
+            setQueueNames(msg.queueNames)
+          } else {
+            const derived = deriveQueueNamesFromConsumers(msg.consumers)
+            if (derived) setQueueNames(derived)
+          }
+          updateConsumersFromState(msg.consumers)
+          if (msg.partitionState) setPartitionState(msg.partitionState)
+          if (msg.partitionedState) setPartitionedState(msg.partitionedState)
+          if (msg.nonExclusiveState) setNonExclusiveState(msg.nonExclusiveState)
+          if (msg.exclusiveState) setExclusiveState(msg.exclusiveState)
+          if (msg.publisherStats) applyPublisherStatsPayload(msg.publisherStats)
+        },
+        onPublisherStats: applyPublisherStatsPayload,
+        onPartitionState: setPartitionState,
+        onQueueState: (msg) => {
+          if (msg.queueType === 'partitioned') {
+            setPartitionedState(msg.state)
+          } else if (msg.queueType === 'non-exclusive') {
+            setNonExclusiveState(msg.state)
+          } else if (msg.queueType === 'exclusive') {
+            setExclusiveState(msg.state)
+          }
+        },
+      })
+    },
+    [
+      applyPublisherStatsPayload,
+      updateConsumer,
+      updateConsumerStatus,
+      updateConsumersFromState,
+    ],
+  )
+
+  const { connected, connectionHint, publishCommand } = useSolaceDashboard({
+    onMessage: onDashboardMessage,
+    onConnect: resetSessionBaselines,
+    onDisconnect: () => {
+      setProfile(null)
+      setQueueNames(null)
+      resetPredictionState()
+      resetSessionBaselines()
+    },
+  })
+
+  useEffect(() => {
+    if (!profile) return
+    const t = profile.branding?.documentTitle || profile.branding?.appTitle
+    if (t) {
+      document.title = t
+    }
+    if (!profile.features?.pricePrediction) {
+      setActiveView('cards')
+    }
+  }, [profile])
+
+  useEffect(() => {
+    if (!connected) {
+      setPublisherStatsLive(false)
+      return
+    }
+    const staleMs = 4500
+    const id = setInterval(() => {
+      const last = lastPublisherStatsAtRef.current
+      setPublisherStatsLive(last > 0 && Date.now() - last < staleMs)
+    }, 400)
+    return () => clearInterval(id)
+  }, [connected])
 
   const handleDisconnect = (consumerId) => {
-    if (window.wsConnection && window.wsConnection.readyState === WebSocket.OPEN) {
-      window.wsConnection.send(
-        JSON.stringify({
-          type: 'disconnect',
-          consumerId,
-        }),
-      )
-    }
+    publishCommand({ type: 'disconnect', consumerId })
   }
 
   const handleReconnect = (consumerId) => {
-    if (window.wsConnection && window.wsConnection.readyState === WebSocket.OPEN) {
-      window.wsConnection.send(
-        JSON.stringify({
-          type: 'reconnect',
-          consumerId,
-        }),
-      )
-    }
+    publishCommand({ type: 'reconnect', consumerId })
   }
 
   const topicFallback =
@@ -474,7 +401,8 @@ function App() {
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100">
       <Header
-        connected={wsConnected}
+        connected={connected}
+        connectionLabel={connected ? `Solace (${connectionHint})` : 'Solace'}
         profile={profile}
         activeView={activeView}
         onViewChange={setActiveView}

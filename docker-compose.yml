@@ -85,8 +85,6 @@ services:
         condition: service_completed_successfully
     env_file:
       - ./docker/demo.apps.env
-    ports:
-      - "8081:8081"
     restart: unless-stopped
 
   publisher:
@@ -105,27 +103,27 @@ services:
         condition: service_started
     env_file:
       - ./docker/demo.apps.env
-    environment:
-      # Stats WebSocket: reach consumer by Compose service name (not localhost).
-      WS_HOST: consumer
     restart: unless-stopped
 
-  # Static React dashboard (Vite build); browser uses host WS port 8081 → consumer.
+  # Static React dashboard (Vite build); browser uses Web Transport :8008 → broker.
   frontend:
     build:
       context: .
       dockerfile: Dockerfile.frontend
       args:
-        VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:8081}
+        VITE_SOLACE_URL: ${VITE_SOLACE_URL:-ws://localhost:8008}
+        VITE_SOLACE_VPN: ${VITE_SOLACE_VPN:-default}
+        VITE_SOLACE_USERNAME: ${VITE_SOLACE_USERNAME:-default}
+        VITE_SOLACE_PASSWORD: ${VITE_SOLACE_PASSWORD:-default}
         VITE_NQ_PREDICTION_CONSUMER: ${VITE_NQ_PREDICTION_CONSUMER:-1}
-        VITE_DASHBOARD_VERSION: ${VITE_DASHBOARD_VERSION:-1.3}
+        VITE_DASHBOARD_VERSION: ${VITE_DASHBOARD_VERSION:-2.1}
     image: partitioned-queue-demo-frontend:local
     container_name: demo-frontend
     depends_on:
       consumer:
         condition: service_started
     volumes:
-      # Runtime WebSocket URL for browsers on another host — edit docker/dashboard-config.js (no image rebuild).
+      # Runtime Solace URL for browsers on another host — edit docker/dashboard-config.js (no image rebuild).
       - ./docker/dashboard-config.js:/usr/share/nginx/html/config.js:ro
     ports:
       - "3000:80"

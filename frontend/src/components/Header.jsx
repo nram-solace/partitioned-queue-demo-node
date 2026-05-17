@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion'
 import { dashboardVersionLabel } from '../config'
 
-function Header({ connected, profile, activeView, onViewChange, showPrediction }) {
+function Header({ connected, connectionLabel, profile, activeView, onViewChange, showPrediction }) {
   const primaryTitle = `Solace Queue Types Demo - ${dashboardVersionLabel()}`
   const profileTitle = profile?.branding?.appTitle?.trim() || null
 
@@ -14,7 +14,7 @@ function Header({ connected, profile, activeView, onViewChange, showPrediction }
             {profileTitle ? (
               <p className="text-lg text-slate-400 font-medium">{profileTitle}</p>
             ) : (
-              <p className="text-sm text-slate-500">Connect the consumer to load a demo profile…</p>
+              <p className="text-sm text-slate-500">Connect to Solace to load a demo profile…</p>
             )}
           </div>
           <div className="flex items-center gap-4 flex-wrap">
@@ -52,7 +52,9 @@ function Header({ connected, profile, activeView, onViewChange, showPrediction }
                 }}
                 className={`w-3 h-3 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`}
               />
-              <span className="text-sm font-medium">{connected ? 'Connected' : 'Disconnected'}</span>
+              <span className="text-sm font-medium">
+                {connected ? connectionLabel || 'Connected to Solace' : 'Disconnected'}
+              </span>
             </div>
           </div>
         </div>

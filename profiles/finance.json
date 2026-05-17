@@ -7,7 +7,7 @@
   "branding": {
     "appTitle": "Market data demo",
     "subtitle": "Solace PubSub+ queue types",
-    "documentTitle": "Queue demo — finance"
+    "documentTitle": "Queue demo - finance"
   },
   "messaging": {
     "topicPrefix": "solace/demo/stocks/orders",

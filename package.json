@@ -16,8 +16,7 @@
   },
   "dependencies": {
     "dotenv": "^16.4.5",
-    "solclientjs": "^10.18.2",
-    "ws": "^8.18.0"
+    "solclientjs": "^10.18.2"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
