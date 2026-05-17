@@ -486,7 +486,7 @@ function App() {
     <div className="min-h-screen bg-slate-900 text-slate-100">
       <Header
         connected={connected}
-        connectionLabel={connected ? `Solace (${connectionHint})` : 'Solace'}
+        connectionLabel={connected ? `Solace - ${connectionHint}` : 'Solace'}
         profile={profile}
         catalogProfiles={catalogProfiles}
         selectedProfileId={selectedProfileId}

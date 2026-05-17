@@ -51,7 +51,22 @@ function Header({
               <p className="text-sm text-slate-500">Connect to Solace to load a demo profile…</p>
             )}
           </div>
-          <div className="flex items-center gap-4 flex-wrap">
+          <div className="flex flex-col items-end gap-2 shrink-0">
+            <div className="flex items-center gap-3">
+              <motion.div
+                animate={{
+                  scale: connected ? [1, 1.2, 1] : 1,
+                }}
+                transition={{
+                  duration: 2,
+                  repeat: connected ? Infinity : 0,
+                }}
+                className={`w-3 h-3 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`}
+              />
+              <span className="text-sm font-medium whitespace-nowrap">
+                {connected ? connectionLabel || 'Solace' : 'Disconnected'}
+              </span>
+            </div>
             {showPrediction && typeof onViewChange === 'function' && (
               <div className="flex bg-slate-700/50 rounded-lg p-1 gap-1">
                 {[
@@ -75,21 +90,6 @@ function Header({
                 ))}
               </div>
             )}
-            <div className="flex items-center gap-3">
-              <motion.div
-                animate={{
-                  scale: connected ? [1, 1.2, 1] : 1,
-                }}
-                transition={{
-                  duration: 2,
-                  repeat: connected ? Infinity : 0,
-                }}
-                className={`w-3 h-3 rounded-full ${connected ? 'bg-green-500' : 'bg-red-500'}`}
-              />
-              <span className="text-sm font-medium">
-                {connected ? connectionLabel || 'Connected to Solace' : 'Disconnected'}
-              </span>
-            </div>
           </div>
         </div>
       </div>

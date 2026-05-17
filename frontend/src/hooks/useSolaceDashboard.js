@@ -118,7 +118,7 @@ export function useSolaceDashboard({
     const connect = () => {
       if (disposed) return
       const cfg = getSolaceSessionConfig()
-      setConnectionHint(cfg.hint)
+      setConnectionHint(`${cfg.userName}@${cfg.hint}`)
 
       session = solace.SolclientFactory.createSession({
         url: cfg.url,
