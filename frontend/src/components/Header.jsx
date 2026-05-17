@@ -1,9 +1,20 @@
 import { motion } from 'framer-motion'
 import { dashboardVersionLabel } from '../config'
 
-function Header({ connected, connectionLabel, profile, activeView, onViewChange, showPrediction }) {
+function Header({
+  connected,
+  connectionLabel,
+  profile,
+  catalogProfiles = [],
+  selectedProfileId,
+  onProfileChange,
+  activeView,
+  onViewChange,
+  showPrediction,
+}) {
   const primaryTitle = `Solace Queue Types Demo - ${dashboardVersionLabel()}`
   const profileTitle = profile?.branding?.appTitle?.trim() || null
+  const showPicker = catalogProfiles.length > 1
 
   return (
     <header className="bg-slate-800 border-b border-slate-700 shadow-lg">
@@ -11,7 +22,30 @@ function Header({ connected, connectionLabel, profile, activeView, onViewChange,
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <div className="min-w-0 flex-1">
             <h1 className="text-3xl font-bold text-white mb-2">{primaryTitle}</h1>
-            {profileTitle ? (
+            {showPicker ? (
+              <div className="flex flex-wrap items-center gap-3">
+                <label htmlFor="profile-picker" className="text-sm text-slate-400">
+                  Demo profile
+                </label>
+                <select
+                  id="profile-picker"
+                  value={selectedProfileId || ''}
+                  onChange={(e) => onProfileChange?.(e.target.value)}
+                  disabled={!connected || catalogProfiles.length === 0}
+                  className="bg-slate-700 border border-slate-600 text-slate-100 rounded-md px-3 py-1.5 text-sm min-w-[12rem] focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                >
+                  {catalogProfiles.length === 0 ? (
+                    <option value="">Loading profiles…</option>
+                  ) : (
+                    catalogProfiles.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.branding?.appTitle || p.id}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+            ) : profileTitle ? (
               <p className="text-lg text-slate-400 font-medium">{profileTitle}</p>
             ) : (
               <p className="text-sm text-slate-500">Connect to Solace to load a demo profile…</p>

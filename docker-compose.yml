@@ -116,7 +116,7 @@ services:
         VITE_SOLACE_USERNAME: ${VITE_SOLACE_USERNAME:-default}
         VITE_SOLACE_PASSWORD: ${VITE_SOLACE_PASSWORD:-default}
         VITE_NQ_PREDICTION_CONSUMER: ${VITE_NQ_PREDICTION_CONSUMER:-1}
-        VITE_DASHBOARD_VERSION: ${VITE_DASHBOARD_VERSION:-2.1}
+        VITE_DASHBOARD_VERSION: ${VITE_DASHBOARD_VERSION:-3.0}
     image: partitioned-queue-demo-frontend:local
     container_name: demo-frontend
     depends_on:

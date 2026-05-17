@@ -23,18 +23,12 @@ function sessionSnapshot(sessionId) {
   return `${UI_ROOT}/session/${sessionId}/snapshot`;
 }
 
-/** Feature 2 — per-session commands (reserved). */
-function sessionCommand(sessionId) {
-  return `${UI_ROOT}/session/${sessionId}/command`;
+function sessionTopics(sessionId) {
+  return `${UI_ROOT}/session/${sessionId}/>`;
 }
 
-/** Feature 1 — shared command topic until session routing ships. */
-function commandsControl() {
-  return `${UI_ROOT}/commands/control`;
-}
-
-function commandsWildcard() {
-  return `${UI_ROOT}/commands/>`;
+function sessionWildcard() {
+  return `${UI_ROOT}/session/>`;
 }
 
 module.exports = {
@@ -43,7 +37,6 @@ module.exports = {
   statsPublisher,
   events,
   sessionSnapshot,
-  sessionCommand,
-  commandsControl,
-  commandsWildcard,
+  sessionTopics,
+  sessionWildcard,
 };

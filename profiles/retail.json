@@ -6,6 +6,11 @@
     "subtitle": "Solace PubSub+ queue types",
     "documentTitle": "Queue demo - retail"
   },
+  "queues": {
+    "partitioned": "Retail_PQ",
+    "nonExclusive": "Retail_NQ",
+    "exclusive": "Retail_EQ"
+  },
   "messaging": {
     "topicPrefix": "solace/demo/retail/fulfillment",
     "partitionKeys": ["STORE-EAST", "STORE-WEST", "STORE-NORTH", "STORE-SOUTH", "STORE-DC1"],

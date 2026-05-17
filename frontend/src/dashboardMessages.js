@@ -19,6 +19,7 @@ export function deriveQueueNamesFromConsumers(consumers) {
  */
 export function handleDashboardMessage(data, handlers) {
   const {
+    onDemoProfiles,
     onDemoProfile,
     onOrder,
     onPrediction,
@@ -30,6 +31,10 @@ export function handleDashboardMessage(data, handlers) {
     canonicalNqConsumer,
   } = handlers
 
+  if (data.type === 'demoProfiles') {
+    onDemoProfiles?.(data)
+    return
+  }
   if (data.type === 'demoProfile') {
     onDemoProfile?.(data)
     return

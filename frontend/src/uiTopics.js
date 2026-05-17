@@ -20,14 +20,14 @@ export function sessionSnapshot(sessionId) {
   return `${UI_ROOT}/session/${sessionId}/snapshot`
 }
 
-export function sessionCommand(sessionId) {
-  return `${UI_ROOT}/session/${sessionId}/command`
+export function sessionSnapshotTopic(sessionId) {
+  return sessionSnapshot(sessionId)
 }
 
-export function commandsControl() {
-  return `${UI_ROOT}/commands/control`
+export function sessionTopics(sessionId) {
+  return `${UI_ROOT}/session/${sessionId}/>`
 }
 
-export function commandsWildcard() {
-  return `${UI_ROOT}/commands/>`
+export function sessionWildcard() {
+  return `${UI_ROOT}/session/>`
 }

@@ -1,8 +1,14 @@
 #!/bin/sh
-# Provision demo queues and topic subscription via SEMP v2 (PubSub+ Manager port).
-# Defaults match README / demo.env (Demo_PQ, Demo_NQ, Demo_EQ, solace/demo/>).
+# Provision demo queues and topic subscriptions via SEMP v2.
+# Usage:
+#   ./scripts/setup-solace.sh           # all profiles in profiles/
+#   ./scripts/setup-solace.sh finance   # one profile by id
 
 set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+PROFILES_DIR="${PROFILES_DIR:-$REPO_ROOT/profiles}"
 
 SOLACE_HOST="${SOLACE_HOST:-solace-broker}"
 SEMP_PORT="${SEMP_PORT:-8080}"
@@ -10,13 +16,6 @@ MSG_VPN="${MSG_VPN:-default}"
 SEMP_USER="${SEMP_USER:-admin}"
 SEMP_PASS="${SEMP_PASS:-admin}"
 
-QUEUE_PQ="${QUEUE_PQ:-Demo_PQ}"
-QUEUE_NQ="${QUEUE_NQ:-Demo_NQ}"
-QUEUE_EQ="${QUEUE_EQ:-Demo_EQ}"
-DEMO_TOPIC_SUB="${DEMO_TOPIC_SUB:-solace/demo/>}"
-PARTITION_COUNT="${PARTITION_COUNT:-8}"
-
-# Total max wait ≈ SEMP_WAIT_MAX_ITERATIONS * SEMP_WAIT_SLEEP_SECS (default 120 * 3 = 360s)
 SEMP_WAIT_MAX_ITERATIONS="${SEMP_WAIT_MAX_ITERATIONS:-120}"
 SEMP_WAIT_SLEEP_SECS="${SEMP_WAIT_SLEEP_SECS:-3}"
 
@@ -38,7 +37,6 @@ wait_semp() {
   exit 1
 }
 
-# Msg-VPN can answer before queue config mutations succeed; wait for queues collection.
 wait_semp_queues_api() {
   echo "Waiting for SEMP queue config API..."
   i=0
@@ -48,7 +46,6 @@ wait_semp_queues_api() {
       echo "SEMP queues collection ready (HTTP 200)."
       return 0
     fi
-    echo "  ... GET queues?count=1 -> HTTP ${code} (retry $((i + 1))/${SEMP_WAIT_MAX_ITERATIONS})"
     i=$((i + 1))
     sleep "$SEMP_WAIT_SLEEP_SECS"
   done
@@ -64,7 +61,6 @@ post_json() {
   curl -sS -o /tmp/semp_body.json -w "%{http_code}" -u "$AUTH" -H "Content-Type: application/json" "$@"
 }
 
-# Retry POST/PATCH on transient broker errors (startup, replication lag).
 post_json_retry() {
   max_attempts=15
   attempt=1
@@ -76,7 +72,6 @@ post_json_retry() {
     fi
     case "$code" in
       502|503|504)
-        echo "  ... transient HTTP ${code}, retry ${attempt}/${max_attempts} after ${delay}s"
         attempt=$((attempt + 1))
         sleep "$delay"
         ;;
@@ -89,7 +84,6 @@ post_json_retry() {
 }
 
 queue_get_missing() {
-  # SEMP v2 returns 404 on some releases; others return 400 + meta.error.status NOT_FOUND for unknown queue.
   [ "$1" = "404" ] || { [ "$1" = "400" ] && jq -e '.meta.error.status == "NOT_FOUND"' /tmp/semp_body.json >/dev/null 2>&1; }
 }
 
@@ -108,7 +102,7 @@ ensure_queue() {
     fi
     body="{\"queueName\":\"${name}\", \"accessType\":\"${access}\"${pc}, \"permission\":\"consume\", \"ingressEnabled\": true, \"egressEnabled\": true}"
     if ! post_json_retry -X POST "${SEMP_BASE}/queues" -d "$body"; then
-      echo "POST queue ${name} failed after retries (last HTTP ${code}):" >&2
+      echo "POST queue ${name} failed:" >&2
       cat /tmp/semp_body.json >&2
       exit 1
     fi
@@ -126,8 +120,6 @@ ensure_queue() {
     if [ "$cur" != "$partitions" ]; then
       echo "Updating ${name} partitionCount ${cur} -> ${partitions}..."
       if ! post_json_retry -X PATCH "${SEMP_BASE}/queues/${name}" -d "{\"partitionCount\": ${partitions}}"; then
-        echo "PATCH queue ${name} failed after retries (last HTTP ${code}):" >&2
-        cat /tmp/semp_body.json >&2
         exit 1
       fi
     fi
@@ -149,23 +141,68 @@ ensure_subscription() {
     return 0
   fi
   if jq -e '.meta.error.status == "ALREADY_EXISTS"' /tmp/semp_body.json >/dev/null 2>&1; then
-    echo "Subscription already present (ok)."
     return 0
   fi
-  echo "POST subscription on ${name} failed HTTP ${code}:" >&2
+  echo "POST subscription on ${name} failed:" >&2
   cat /tmp/semp_body.json >&2
   exit 1
+}
+
+provision_profile_file() {
+  file="$1"
+  if [ ! -f "$file" ]; then
+    echo "Profile file not found: $file" >&2
+    exit 1
+  fi
+
+  id=$(jq -r '.id' "$file")
+  topic_prefix=$(jq -r '.messaging.topicPrefix' "$file")
+  pq=$(jq -r '.queues.partitioned' "$file")
+  nq=$(jq -r '.queues.nonExclusive' "$file")
+  eq=$(jq -r '.queues.exclusive' "$file")
+  partition_count=$(jq '.messaging.partitionKeys | length' "$file")
+  topic_sub="${topic_prefix}/>"
+
+  echo "Profile ${id}: ${pq} (${partition_count} partitions), ${nq}, ${eq} → ${topic_sub}"
+
+  ensure_queue "$pq" "non-exclusive" "$partition_count"
+  ensure_queue "$nq" "non-exclusive" "0"
+  ensure_queue "$eq" "exclusive" "0"
+
+  ensure_subscription "$pq" "$topic_sub"
+  ensure_subscription "$nq" "$topic_sub"
+  ensure_subscription "$eq" "$topic_sub"
 }
 
 wait_semp
 wait_semp_queues_api
 
-ensure_queue "$QUEUE_PQ" "non-exclusive" "$PARTITION_COUNT"
-ensure_queue "$QUEUE_NQ" "non-exclusive" "0"
-ensure_queue "$QUEUE_EQ" "exclusive" "0"
+if [ "$#" -eq 0 ]; then
+  found=0
+  for f in "$PROFILES_DIR"/*.json; do
+    [ -f "$f" ] || continue
+    found=1
+    provision_profile_file "$f"
+  done
+  if [ "$found" -eq 0 ]; then
+    echo "No profile JSON files in ${PROFILES_DIR}" >&2
+    exit 1
+  fi
+else
+  profile_id="$1"
+  matched=""
+  for f in "$PROFILES_DIR"/*.json; do
+    [ -f "$f" ] || continue
+    if [ "$(jq -r '.id' "$f")" = "$profile_id" ]; then
+      matched="$f"
+      break
+    fi
+  done
+  if [ -z "$matched" ]; then
+    echo "Profile not found: ${profile_id} (looked in ${PROFILES_DIR})" >&2
+    exit 1
+  fi
+  provision_profile_file "$matched"
+fi
 
-ensure_subscription "$QUEUE_PQ" "$DEMO_TOPIC_SUB"
-ensure_subscription "$QUEUE_NQ" "$DEMO_TOPIC_SUB"
-ensure_subscription "$QUEUE_EQ" "$DEMO_TOPIC_SUB"
-
-echo "Solace demo queues and topic subscription are ready."
+echo "Solace demo queues and topic subscriptions are ready."

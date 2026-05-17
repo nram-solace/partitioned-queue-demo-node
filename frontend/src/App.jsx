@@ -1,14 +1,55 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import QueuePanel from './components/QueuePanel'
 import Header from './components/Header'
 import PublisherStatus from './components/PublisherStatus'
 import PredictionView from './components/PredictionView'
 import { NQ_PREDICTION_CONSUMER } from './config'
 import { useSolaceDashboard } from './hooks/useSolaceDashboard'
+import { getOrCreateSessionId } from './sessionId'
 import { deriveQueueNamesFromConsumers, handleDashboardMessage } from './dashboardMessages'
 
 const CANONICAL_NQ_CONSUMER = NQ_PREDICTION_CONSUMER
 const HISTORY_LIMIT = 100
+
+const emptyConsumers = () => ({
+  partitioned: Array(5)
+    .fill(null)
+    .map((_, i) => ({
+      id: i + 1,
+      queueName: '',
+      queueType: 'partitioned',
+      consumerNumber: i + 1,
+      status: 'offline',
+      messagesProcessed: 0,
+      rate: 0,
+      lastOrders: [],
+      assignedPartitionKey: null,
+    })),
+  nonExclusive: Array(5)
+    .fill(null)
+    .map((_, i) => ({
+      id: i + 6,
+      queueName: '',
+      queueType: 'non-exclusive',
+      consumerNumber: i + 1,
+      status: 'offline',
+      messagesProcessed: 0,
+      rate: 0,
+      lastOrders: [],
+    })),
+  exclusive: Array(5)
+    .fill(null)
+    .map((_, i) => ({
+      id: i + 11,
+      queueName: '',
+      queueType: 'exclusive',
+      consumerNumber: i + 1,
+      status: 'offline',
+      messagesProcessed: 0,
+      rate: 0,
+      lastOrders: [],
+    })),
+})
 
 function computeSessionPublishedCountBySymbol(publishedCountBySymbol, baseline) {
   if (!publishedCountBySymbol || typeof publishedCountBySymbol !== 'object') {
@@ -38,48 +79,12 @@ function publisherCountsRegressed(publishedCountBySymbol, baseline) {
 }
 
 function App() {
+  const sessionId = useMemo(() => getOrCreateSessionId(), [])
+  const [profileCatalog, setProfileCatalog] = useState(null)
+  const [selectedProfileId, setSelectedProfileId] = useState(null)
   const [profile, setProfile] = useState(null)
   const [queueNames, setQueueNames] = useState(null)
-
-  const [consumers, setConsumers] = useState({
-    partitioned: Array(5)
-      .fill(null)
-      .map((_, i) => ({
-        id: i + 1,
-        queueName: '',
-        queueType: 'partitioned',
-        consumerNumber: i + 1,
-        status: 'offline',
-        messagesProcessed: 0,
-        rate: 0,
-        lastOrders: [],
-        assignedPartitionKey: null,
-      })),
-    nonExclusive: Array(5)
-      .fill(null)
-      .map((_, i) => ({
-        id: i + 6,
-        queueName: '',
-        queueType: 'non-exclusive',
-        consumerNumber: i + 1,
-        status: 'offline',
-        messagesProcessed: 0,
-        rate: 0,
-        lastOrders: [],
-      })),
-    exclusive: Array(5)
-      .fill(null)
-      .map((_, i) => ({
-        id: i + 11,
-        queueName: '',
-        queueType: 'exclusive',
-        consumerNumber: i + 1,
-        status: 'offline',
-        messagesProcessed: 0,
-        rate: 0,
-        lastOrders: [],
-      })),
-  })
+  const [consumers, setConsumers] = useState(emptyConsumers)
 
   const [partitionState, setPartitionState] = useState('unknown')
   const [partitionedState, setPartitionedState] = useState('unknown')
@@ -104,7 +109,24 @@ function App() {
   const publishedCountBaselineRef = useRef(null)
   const latestActualRef = useRef({})
   const lastPublisherStatsAtRef = useRef(0)
+  const selectedProfileIdRef = useRef(selectedProfileId)
   const [publisherStatsLive, setPublisherStatsLive] = useState(false)
+
+  selectedProfileIdRef.current = selectedProfileId
+
+  const applyProfileEntry = useCallback((entry) => {
+    if (!entry) return
+    setProfile(entry)
+    if (entry.queueNames) {
+      setQueueNames(entry.queueNames)
+    } else if (entry.queues) {
+      setQueueNames({
+        partitioned: entry.queues.partitioned,
+        nonExclusive: entry.queues.nonExclusive,
+        exclusive: entry.queues.exclusive,
+      })
+    }
+  }, [])
 
   const applyPublisherStatsPayload = useCallback((data) => {
     lastPublisherStatsAtRef.current = Date.now()
@@ -286,12 +308,50 @@ function App() {
     setActiveView('cards')
   }, [])
 
+  const resetTileState = useCallback(() => {
+    setConsumers(emptyConsumers())
+    setPartitionState('unknown')
+    setPartitionedState('unknown')
+    setNonExclusiveState('unknown')
+    setExclusiveState('unknown')
+  }, [])
+
+  const publishCommandRef = useRef(null)
+
   const onDashboardMessage = useCallback(
     (data) => {
+      const selected = selectedProfileIdRef.current
+      if (
+        data.type !== 'demoProfiles' &&
+        data.profileId != null &&
+        selected &&
+        data.profileId !== selected
+      ) {
+        return
+      }
+      if (data.type === 'state' && data.sessionId && data.sessionId !== sessionId) {
+        return
+      }
+
       handleDashboardMessage(data, {
         canonicalNqConsumer: CANONICAL_NQ_CONSUMER,
+        onDemoProfiles: (msg) => {
+          setProfileCatalog({
+            profiles: msg.profiles || [],
+            defaultProfileId: msg.defaultProfileId,
+          })
+          const defaultId =
+            msg.defaultProfileId || msg.profiles?.[0]?.id || null
+          if (!selectedProfileIdRef.current && defaultId) {
+            selectedProfileIdRef.current = defaultId
+            setSelectedProfileId(defaultId)
+            const entry = msg.profiles?.find((p) => p.id === defaultId)
+            applyProfileEntry(entry)
+            publishCommandRef.current?.({ type: 'selectProfile', profileId: defaultId })
+          }
+        },
         onDemoProfile: (msg) => {
-          setProfile(msg.profile)
+          if (msg.profile) applyProfileEntry(msg.profile)
           if (msg.queueNames) setQueueNames(msg.queueNames)
         },
         onOrder: updateConsumer,
@@ -306,7 +366,7 @@ function App() {
         },
         onStatus: updateConsumerStatus,
         onState: (msg) => {
-          if (msg.profile) setProfile(msg.profile)
+          if (msg.profile) applyProfileEntry(msg.profile)
           if (msg.queueNames) {
             setQueueNames(msg.queueNames)
           } else {
@@ -334,6 +394,8 @@ function App() {
       })
     },
     [
+      sessionId,
+      applyProfileEntry,
       applyPublisherStatsPayload,
       updateConsumer,
       updateConsumerStatus,
@@ -342,15 +404,33 @@ function App() {
   )
 
   const { connected, connectionHint, publishCommand } = useSolaceDashboard({
+    sessionId,
+    selectedProfileId,
     onMessage: onDashboardMessage,
     onConnect: resetSessionBaselines,
     onDisconnect: () => {
       setProfile(null)
       setQueueNames(null)
+      setProfileCatalog(null)
+      setSelectedProfileId(null)
       resetPredictionState()
       resetSessionBaselines()
+      resetTileState()
     },
   })
+
+  publishCommandRef.current = publishCommand
+
+  const handleProfileChange = (profileId) => {
+    if (!profileId || profileId === selectedProfileId) return
+    setSelectedProfileId(profileId)
+    const entry = profileCatalog?.profiles?.find((p) => p.id === profileId)
+    applyProfileEntry(entry)
+    resetTileState()
+    resetPredictionState()
+    resetSessionBaselines()
+    publishCommand({ type: 'selectProfile', profileId })
+  }
 
   useEffect(() => {
     if (!profile) return
@@ -377,11 +457,13 @@ function App() {
   }, [connected])
 
   const handleDisconnect = (consumerId) => {
-    publishCommand({ type: 'disconnect', consumerId })
+    if (!selectedProfileId) return
+    publishCommand({ type: 'disconnect', profileId: selectedProfileId, consumerId })
   }
 
   const handleReconnect = (consumerId) => {
-    publishCommand({ type: 'reconnect', consumerId })
+    if (!selectedProfileId) return
+    publishCommand({ type: 'reconnect', profileId: selectedProfileId, consumerId })
   }
 
   const topicFallback =
@@ -398,12 +480,17 @@ function App() {
       : profile?.messaging?.partitionKeys ?? []
   ).sort()
 
+  const catalogProfiles = profileCatalog?.profiles ?? []
+
   return (
     <div className="min-h-screen bg-slate-900 text-slate-100">
       <Header
         connected={connected}
         connectionLabel={connected ? `Solace (${connectionHint})` : 'Solace'}
         profile={profile}
+        catalogProfiles={catalogProfiles}
+        selectedProfileId={selectedProfileId}
+        onProfileChange={handleProfileChange}
         activeView={activeView}
         onViewChange={setActiveView}
         showPrediction={showPricePrediction}

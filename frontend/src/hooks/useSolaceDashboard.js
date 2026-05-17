@@ -2,10 +2,12 @@ import { useEffect, useRef, useState, useCallback } from 'react'
 import solace from 'solclientjs'
 import { getSolaceSessionConfig } from '../config'
 import {
-  UI_ROOT,
   catalogProfiles,
-  commandsControl,
+  events,
+  statsPublisher,
+  sessionTopics,
 } from '../uiTopics'
+import { commandSession } from '../commandTopics'
 import { encodeJsonAttachment, parseSolaceJsonMessage } from '../solaceMessage'
 
 let solaceFactoryInitialized = false
@@ -19,56 +21,99 @@ function ensureSolaceFactory() {
   solaceFactoryInitialized = true
 }
 
-function sendSnapshotRequest(session) {
-  const msg = solace.SolclientFactory.createMessage()
-  msg.setDestination(solace.SolclientFactory.createTopicDestination(commandsControl()))
-  msg.setBinaryAttachment(encodeJsonAttachment({ type: 'requestSnapshot' }))
-  msg.setDeliveryMode(solace.MessageDeliveryModeType.DIRECT)
-  session.send(msg)
-}
-
 /**
- * @param {{ onMessage: (data: object) => void, onConnect?: () => void, onDisconnect?: () => void }} options
+ * @param {{
+ *   sessionId: string,
+ *   selectedProfileId: string | null,
+ *   onMessage: (data: object) => void,
+ *   onConnect?: () => void,
+ *   onDisconnect?: () => void,
+ * }} options
  */
-export function useSolaceDashboard({ onMessage, onConnect, onDisconnect }) {
+export function useSolaceDashboard({
+  sessionId,
+  selectedProfileId,
+  onMessage,
+  onConnect,
+  onDisconnect,
+}) {
   const [connected, setConnected] = useState(false)
   const [connectionHint, setConnectionHint] = useState('')
   const sessionRef = useRef(null)
+  const profileSubIdsRef = useRef([])
   const onMessageRef = useRef(onMessage)
   const onConnectRef = useRef(onConnect)
   const onDisconnectRef = useRef(onDisconnect)
+  const sessionIdRef = useRef(sessionId)
+  const selectedProfileIdRef = useRef(selectedProfileId)
 
   onMessageRef.current = onMessage
   onConnectRef.current = onConnect
   onDisconnectRef.current = onDisconnect
+  sessionIdRef.current = sessionId
+  selectedProfileIdRef.current = selectedProfileId
+
+  const unsubscribeProfileTopics = useCallback((s) => {
+    if (!s) return
+    for (const subId of profileSubIdsRef.current) {
+      try {
+        s.unsubscribe(subId)
+      } catch (_) {
+        /* ignore */
+      }
+    }
+    profileSubIdsRef.current = []
+  }, [])
+
+  const subscribeProfileTopics = useCallback(
+    (s, profileId) => {
+      if (!s || !profileId) return
+      unsubscribeProfileTopics(s)
+      const topics = [events(profileId), statsPublisher(profileId)]
+      const ids = []
+      topics.forEach((topic, i) => {
+        const id = s.subscribe(
+          solace.SolclientFactory.createTopicDestination(topic),
+          true,
+          `profile-${profileId}-${i}`,
+          10000,
+        )
+        ids.push(id)
+      })
+      profileSubIdsRef.current = ids
+      console.log('Subscribed to profile topics:', topics.join(', '))
+    },
+    [unsubscribeProfileTopics],
+  )
 
   const publishCommand = useCallback((payload) => {
     const session = sessionRef.current
-    if (!session) return
+    const sid = sessionIdRef.current
+    if (!session || !sid) return
     const msg = solace.SolclientFactory.createMessage()
-    msg.setDestination(solace.SolclientFactory.createTopicDestination(commandsControl()))
-    msg.setBinaryAttachment(encodeJsonAttachment(payload))
+    msg.setDestination(solace.SolclientFactory.createTopicDestination(commandSession(sid)))
+    msg.setBinaryAttachment(
+      encodeJsonAttachment({ ...payload, sessionId: sid }),
+    )
     msg.setDeliveryMode(solace.MessageDeliveryModeType.DIRECT)
     session.send(msg)
   }, [])
+
+  const requestSnapshot = useCallback(() => {
+    publishCommand({ type: 'requestSnapshot' })
+  }, [publishCommand])
+
+  useEffect(() => {
+    const s = sessionRef.current
+    if (!connected || !s) return
+    subscribeProfileTopics(s, selectedProfileId)
+  }, [connected, selectedProfileId, subscribeProfileTopics])
 
   useEffect(() => {
     ensureSolaceFactory()
     let session = null
     let reconnectTimer = null
     let disposed = false
-
-    const subscribeCatalogTopics = (s) => {
-      const subs = [
-        catalogProfiles(),
-        `${UI_ROOT}/events/>`,
-        `${UI_ROOT}/stats/>`,
-      ]
-      subs.forEach((topic, i) => {
-        s.subscribe(solace.SolclientFactory.createTopicDestination(topic), true, `dash-${i}`, 10000)
-      })
-      console.log('Subscribed to Solace catalog topics:', subs.join(', '))
-    }
 
     const connect = () => {
       if (disposed) return
@@ -85,11 +130,24 @@ export function useSolaceDashboard({ onMessage, onConnect, onDisconnect }) {
       sessionRef.current = session
 
       session.on(solace.SessionEventCode.UP_NOTICE, () => {
-        subscribeCatalogTopics(session)
-        // Consumer publishes catalog/state once at startup; request again after we subscribe.
+        const sid = sessionIdRef.current
+        session.subscribe(
+          solace.SolclientFactory.createTopicDestination(catalogProfiles()),
+          true,
+          'dash-catalog',
+          10000,
+        )
+        if (sid) {
+          session.subscribe(
+            solace.SolclientFactory.createTopicDestination(sessionTopics(sid)),
+            true,
+            'dash-session',
+            10000,
+          )
+        }
         setTimeout(() => {
           if (sessionRef.current === session) {
-            sendSnapshotRequest(session)
+            publishCommand({ type: 'requestSnapshot' })
           }
         }, 300)
         setConnected(true)
@@ -107,6 +165,7 @@ export function useSolaceDashboard({ onMessage, onConnect, onDisconnect }) {
 
       session.on(solace.SessionEventCode.DISCONNECTED, () => {
         setConnected(false)
+        unsubscribeProfileTopics(sessionRef.current)
         sessionRef.current = null
         onDisconnectRef.current?.()
         if (!disposed) {
@@ -114,8 +173,7 @@ export function useSolaceDashboard({ onMessage, onConnect, onDisconnect }) {
         }
       })
 
-      session.on(solace.SessionEventCode.CONNECT_FAILED_ERROR, (sessionEvent) => {
-        console.error('Solace dashboard connect failed:', sessionEvent.infoStr)
+      session.on(solace.SessionEventCode.CONNECT_FAILED_ERROR, () => {
         setConnected(false)
         if (!disposed) {
           reconnectTimer = setTimeout(connect, 3000)
@@ -130,6 +188,7 @@ export function useSolaceDashboard({ onMessage, onConnect, onDisconnect }) {
     return () => {
       disposed = true
       if (reconnectTimer) clearTimeout(reconnectTimer)
+      unsubscribeProfileTopics(sessionRef.current)
       if (session) {
         try {
           session.disconnect()
@@ -139,7 +198,7 @@ export function useSolaceDashboard({ onMessage, onConnect, onDisconnect }) {
       }
       sessionRef.current = null
     }
-  }, [])
+  }, [publishCommand, unsubscribeProfileTopics])
 
-  return { connected, connectionHint, publishCommand }
+  return { connected, connectionHint, publishCommand, requestSnapshot }
 }

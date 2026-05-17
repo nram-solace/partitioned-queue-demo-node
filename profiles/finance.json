@@ -9,6 +9,11 @@
     "subtitle": "Solace PubSub+ queue types",
     "documentTitle": "Queue demo - finance"
   },
+  "queues": {
+    "partitioned": "Finance_PQ",
+    "nonExclusive": "Finance_NQ",
+    "exclusive": "Finance_EQ"
+  },
   "messaging": {
     "topicPrefix": "solace/demo/stocks/orders",
     "partitionKeys": ["AAPL", "GOOGL", "MSFT", "AMZN", "TSLA", "NVDA", "META", "IBM"],

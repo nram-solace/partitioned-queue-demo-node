@@ -6,6 +6,7 @@ function slimProfile(profile) {
     id: profile.id,
     branding: profile.branding,
     messaging: profile.messaging,
+    queues: profile.queues,
     features: profile.features,
     labels: profile.labels,
     ui: profile.ui,

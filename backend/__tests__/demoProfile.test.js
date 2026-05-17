@@ -4,6 +4,8 @@ const path = require('path');
 const {
   loadDemoProfile,
   validateDemoProfile,
+  listDemoProfiles,
+  getQueueNames,
   generateMessageFromProfile,
   jmsxGroupIdForMessage,
   topicForMessage,
@@ -26,6 +28,20 @@ test('parse and validate profiles/finance.json', () => {
   assert.equal(p.id, 'finance');
   assert.equal(isPricePredictionEnabled(p), true);
   assert.equal(p.messaging.partitionKeys.length, 8);
+  assert.equal(getQueueNames(p).partitioned, 'Finance_PQ');
+});
+
+test('listDemoProfiles loads finance and retail', () => {
+  const profiles = listDemoProfiles(path.join(__dirname, '../../profiles'));
+  assert.equal(profiles.length, 2);
+  assert.equal(profiles[0].id, 'finance');
+  assert.equal(profiles[1].id, 'retail');
+});
+
+test('missing queues fails validation', () => {
+  const p = loadDemoProfile(financePath);
+  delete p.queues;
+  assert.throws(() => validateDemoProfile(p), /queues/);
 });
 
 test('invalid profile throws actionable error', () => {

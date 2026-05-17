@@ -1,6 +1,7 @@
 const solace = require('solclientjs');
 const { wrapUiEnvelope } = require('./uiEnvelope');
-const { catalogProfiles, events, commandsWildcard } = require('./uiTopics');
+const { catalogProfiles, events, sessionSnapshot } = require('./uiTopics');
+const { commandWildcard } = require('./commandTopics');
 const { slimProfile, attachJsonPayload, parseJsonAttachment } = require('./catalogPayload');
 
 function createSessionProps(suffix) {
@@ -14,11 +15,10 @@ function createSessionProps(suffix) {
 }
 
 /**
- * Solace session for dashboard catalog/events publish and command subscribe.
+ * Solace session for dashboard catalog/events publish and solace/command subscribe.
  */
 class CatalogUiSession {
-  constructor(profileId) {
-    this.profileId = profileId;
+  constructor() {
     this.session = null;
     this.connected = false;
     this.onCommand = null;
@@ -27,17 +27,17 @@ class CatalogUiSession {
   connect({ onCommand } = {}) {
     this.onCommand = onCommand;
     return new Promise((resolve, reject) => {
-      this.session = solace.SolclientFactory.createSession(createSessionProps(this.profileId));
+      this.session = solace.SolclientFactory.createSession(createSessionProps('multi'));
 
       this.session.on(solace.SessionEventCode.UP_NOTICE, () => {
         this.connected = true;
         this.session.subscribe(
-          solace.SolclientFactory.createTopicDestination(commandsWildcard()),
+          solace.SolclientFactory.createTopicDestination(commandWildcard()),
           true,
           'ui-commands',
           10000,
         );
-        console.log(`📡 UI command subscription: ${commandsWildcard()}`);
+        console.log(`📡 UI command subscription: ${commandWildcard()}`);
         resolve();
       });
 
@@ -54,14 +54,10 @@ class CatalogUiSession {
   }
 
   handleCommandMessage(message) {
-    if (!this.onCommand) {
-      return;
-    }
+    if (!this.onCommand) return;
     try {
       const raw = message.getBinaryAttachment();
-      if (!raw) {
-        return;
-      }
+      if (!raw) return;
       const data = parseJsonAttachment(raw);
       this.onCommand(data);
     } catch (error) {
@@ -70,9 +66,7 @@ class CatalogUiSession {
   }
 
   publishTopic(topic, payload) {
-    if (!this.session || !this.connected) {
-      return;
-    }
+    if (!this.session || !this.connected) return;
     const msg = solace.SolclientFactory.createMessage();
     msg.setDestination(solace.SolclientFactory.createTopicDestination(topic));
     attachJsonPayload(msg, payload);
@@ -80,18 +74,33 @@ class CatalogUiSession {
     this.session.send(msg);
   }
 
-  publishEvent(payload) {
-    this.publishTopic(events(this.profileId), wrapUiEnvelope(this.profileId, payload));
+  publishEvent(profileId, payload) {
+    this.publishTopic(events(profileId), wrapUiEnvelope(profileId, payload));
   }
 
-  publishCatalog(profile, queueNames) {
+  publishProfilesCatalog(profiles, defaultProfileId) {
+    const entries = profiles.map((p) => ({
+      ...slimProfile(p),
+      queueNames: {
+        partitioned: p.queues.partitioned,
+        nonExclusive: p.queues.nonExclusive,
+        exclusive: p.queues.exclusive,
+      },
+    }));
     this.publishTopic(
       catalogProfiles(),
-      wrapUiEnvelope(this.profileId, {
-        type: 'demoProfile',
-        profile: slimProfile(profile),
-        queueNames,
+      wrapUiEnvelope(null, {
+        type: 'demoProfiles',
+        profiles: entries,
+        defaultProfileId,
       }),
+    );
+  }
+
+  publishSessionSnapshot(sessionId, profileId, statePayload) {
+    this.publishTopic(
+      sessionSnapshot(sessionId),
+      wrapUiEnvelope(profileId, statePayload, sessionId),
     );
   }
 

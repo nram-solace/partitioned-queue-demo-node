@@ -192,6 +192,16 @@ function validateDemoProfile(profile) {
     }
   }
 
+  if (!profile.queues || typeof profile.queues !== 'object') {
+    throw new Error('Demo profile requires object: queues');
+  }
+  const q = profile.queues;
+  for (const key of ['partitioned', 'nonExclusive', 'exclusive']) {
+    if (typeof q[key] !== 'string' || !q[key].trim()) {
+      throw new Error(`Demo profile requires non-empty string: queues.${key}`);
+    }
+  }
+
   if (profile.features && profile.features.pricePrediction === true) {
     const priceField = profile.messageFields.find((x) => x.name === 'price' && x.type === 'float');
     if (!priceField || !priceField.baselineByPartitionKey) {
@@ -241,12 +251,59 @@ function loadDemoProfile(resolvedPath) {
   return parsed;
 }
 
-/**
- * Resolve DEMO_PROFILE relative to process.cwd() (repo root when scripts run from npm in project root).
- */
-function resolveDemoProfilePathFromEnv() {
-  const raw = (process.env.DEMO_PROFILE || './profiles/finance.json').trim();
+function resolveProfilesDir() {
+  const raw = (process.env.PROFILES_DIR || './profiles').trim();
   return path.isAbsolute(raw) ? raw : path.resolve(process.cwd(), raw);
+}
+
+/**
+ * @returns {object[]} validated profiles sorted by id
+ */
+function listDemoProfiles(profilesDir) {
+  const dir = profilesDir || resolveProfilesDir();
+  if (!fs.existsSync(dir)) {
+    throw new Error(`Profiles directory not found: ${dir}`);
+  }
+  const files = fs
+    .readdirSync(dir)
+    .filter((f) => f.endsWith('.json'))
+    .sort();
+  if (files.length === 0) {
+    throw new Error(`No profile JSON files in ${dir}`);
+  }
+  const profiles = [];
+  const seenIds = new Set();
+  for (const file of files) {
+    const filePath = path.join(dir, file);
+    const profile = validateDemoProfile(loadDemoProfile(filePath));
+    if (seenIds.has(profile.id)) {
+      throw new Error(`Duplicate profile id "${profile.id}" in ${dir}`);
+    }
+    seenIds.add(profile.id);
+    profiles.push(profile);
+  }
+  profiles.sort((a, b) => a.id.localeCompare(b.id));
+  return profiles;
+}
+
+function getQueueNames(profile) {
+  validateDemoProfile(profile);
+  return {
+    partitioned: profile.queues.partitioned,
+    nonExclusive: profile.queues.nonExclusive,
+    exclusive: profile.queues.exclusive,
+  };
+}
+
+/** @param {object[]} profiles */
+function defaultProfileId(profiles) {
+  if (!profiles?.length) {
+    return 'finance';
+  }
+  if (profiles.some((p) => p.id === 'finance')) {
+    return 'finance';
+  }
+  return profiles[0].id;
 }
 
 function pickRandom(arr) {
@@ -372,7 +429,10 @@ function isPricePredictionEnabled(profile) {
 module.exports = {
   validateDemoProfile,
   loadDemoProfile,
-  resolveDemoProfilePathFromEnv,
+  resolveProfilesDir,
+  listDemoProfiles,
+  getQueueNames,
+  defaultProfileId,
   generateMessageFromProfile,
   jmsxGroupIdForMessage,
   topicForMessage,
