@@ -1,12 +1,13 @@
 /**
- * Runtime overrides (Docker: bind-mount docker/dashboard-config.js over this file).
- * solaceUrl = Web Transport to PubSub+ (:8008), NOT the HTTP UI (:3000).
+ * AUTO-GENERATED — do not edit by hand.
+ * Source: demo.env (repo root). Regenerate: npm run sync-config
+ * See: .dev/pm/impl-central-config.md
  */
 window.__DEMO_CONFIG__ = {
-  version: '3.4',
+  version: "3.4",
   solaceUrl: null,
   solaceVpn: null,
   solaceUsername: null,
   solacePassword: null,
-  nqPredictionConsumer: 1,
+  nqPredictionConsumer: null,
 }

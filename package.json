@@ -3,11 +3,13 @@
   "version": "1.0.0",
   "description": "Solace PubSub+ Queue Types Demo - Stock Order Processing",
   "scripts": {
+    "sync-config": "node scripts/sync-frontend-config.js",
     "publisher": "node backend/publisher.js",
     "consumer": "node backend/consumer.js",
     "setup-solace": "sh scripts/setup-solace.sh",
     "test": "node --test 'backend/__tests__/**/*.test.js'",
-    "dev": "concurrently \"npm run publisher\" \"npm run frontend\"",
+    "dev": "npm run sync-config && concurrently \"npm run publisher\" \"npm run frontend\"",
+    "prefrontend": "npm run sync-config",
     "frontend": "cd frontend && npm run dev",
     "install-all": "npm install && cd frontend && npm install"
   },

@@ -41,11 +41,11 @@ docker compose up -d --build
 
 (`--build` recommended the first time or after changing Node dependencies.)
 
-This starts **`solace-broker`** (PubSub+ Standard), a one-shot **`solace-init`** that provisions **queues and topic subscriptions for every profile** under `profiles/` (e.g. `Finance_PQ` / `Retail_PQ` / `AirlineCarrier_PQ` and matching NQ/EQ), the **Node `consumer`** and **`publisher`** containers, and a **`frontend`** service (**nginx** serving the Vite production build on host **`http://localhost:3000`**). Defaults (**finance**, eight partitions) live in **`docker/demo.apps.env`**.
+This starts **`solace-broker`** (PubSub+ Standard), a one-shot **`solace-init`** that provisions **queues and topic subscriptions for every profile** under `profiles/` (e.g. `Finance_PQ` / `Retail_PQ` / `AirlineCarrier_PQ` and matching NQ/EQ), the **Node `consumer`** and **`publisher`** containers, and a **`frontend`** service (**nginx** serving the Vite production build on host **`http://localhost:3000`**). Shared settings live in **`demo.env`** (copy from **`demo.env.example`**); Compose overrides in-network **`SOLACE_HOST`** for Node containers.
 
 See **`scripts/setup-solace.sh`** if you need to change Solace resources.
 
-To **re-run** provisioning (for example after changing **`PARTITION_COUNT`** or queue settings in **`docker/demo.apps.env`**):
+To **re-run** provisioning (for example after adding a profile JSON or changing queue names in a profile):
 
 ```bash
 docker compose run --rm solace-init
@@ -54,7 +54,7 @@ docker compose run --rm solace-init
 
 Endpoints (typical local setup):
 
-- **Dashboard (Docker frontend)**: http://localhost:3000 (Solace Web Transport to **`ws://localhost:8008`** — override with **`VITE_SOLACE_URL`** or **`docker/dashboard-config.js`**)
+- **Dashboard (Docker frontend)**: http://localhost:3000 (Solace Web Transport to **`ws://localhost:8008`** — set **`SOLACE_PUBLIC_URL`** in **`demo.env`** and recreate **`demo-frontend`**)
 - **PubSub+ Web Transport**: `ws://localhost:8008` (browser + Node apps)
 - **PubSub+ Manager**: http://localhost:8080 (`admin` / `admin`)
 
@@ -82,35 +82,22 @@ docker compose down -v
 
 #### Profile (Docker) and UI
 
-**Switch profile (e.g. retail)** — edit **`docker/demo.apps.env`** only:
+**Switch profile** — use the dashboard profile picker (all **`profiles/*.json`** are loaded by the consumer). No env change or container restart is required for the UI.
 
-- Set **`DEMO_PROFILE=./profiles/retail.json`**
-- Set **`PARTITION_COUNT=5`** (must match **`messaging.partitionKeys.length`** in that JSON; use **`8`** for **`./profiles/finance.json`**)
-
-Then restart the Node containers so they reload **`docker/demo.apps.env`** (profile path, rates, etc.):
+Re-run **`solace-init`** only when you **add or change profile JSON** (new queue names or partition counts):
 
 ```bash
-docker compose up -d --force-recreate consumer publisher
+docker compose run --rm solace-init
+# or: docker compose up -d --force-recreate solace-init consumer publisher
 ```
 
-**When do you need `solace-init` again?** Not because of topic subscription or queue names: **`solace/demo/>`** already covers both profiles, and **`Demo_*`** names stay the same.
+**`solace-init`** is a **one-shot** container (`restart: "no"`). Compose does not re-run it after a successful exit until you recreate it.
 
-- **`solace-init`** is a **one-shot** container (`restart: "no"`): Compose does **not** re-run it on every **`docker compose up`** after it has exited successfully. You only recreate it when **broker** settings from **`docker/demo.apps.env`** must be reapplied — mainly **`PARTITION_COUNT`** on **`Demo_PQ`** (8 for finance, 5 for retail). Without re-running init, the broker can keep the wrong partition count while the app loads a different profile.
-- If you **only** changed something that affects **Node** (e.g. **`DEMO_PROFILE`**, **`PUBLISH_RATE`**) and **`PARTITION_COUNT`** is unchanged, **`consumer`** + **`publisher`** recreate is enough.
+With **`docker compose up`**, open the dashboard at **`http://localhost:3000`**. The frontend container regenerates **`/config.js`** from **`demo.env`** (and Compose defaults) at startup.
 
-Retail example (partition count changes):
+**Remote browsers (e.g. Azure VM public IP):** set **`SOLACE_PUBLIC_URL=ws://<VM_IP>:8008`** in **`demo.env`**, then **`docker compose up -d --force-recreate frontend`**. If **`solaceUrl`** is **`null`** in generated config, the app rewrites **`ws://localhost:8008`** to **`ws://<same host as the page>:8008`** when the page is not on localhost.
 
-```bash
-docker compose up -d --force-recreate solace-init consumer publisher
-```
-
-You do not need **`docker compose down`** for a profile switch. The **frontend** container does not need a rebuild unless you change **`Dockerfile.frontend`** build args; the live profile is published to **`solace/catalog/profiles`** when the consumer starts.
-
-With **`docker compose up`**, open the dashboard at **`http://localhost:3000`**. The static bundle uses **`VITE_SOLACE_URL`** at **image build** time (default **`ws://localhost:8008`**); change compose **`build.args`** and **`docker compose build frontend`** if your host layout differs.
-
-**Remote browsers (e.g. Azure VM public IP):** set **`solaceUrl`** in **`docker/dashboard-config.js`** (mounted as **`/config.js`**) to **`ws://<VM_IP>:8008`**, then **`docker compose restart frontend`**. If **`solaceUrl`** is **`null`**, the app rewrites **`ws://localhost:8008`** to **`ws://<same host as the page>:8008`** when the page is not on localhost.
-
-For **local Vite dev** (hot reload), run **`npm run consumer`**, **`npm run publisher`**, and **`npm run frontend`**; ensure **`frontend/public/config.js`** or **`VITE_SOLACE_*`** points at the broker.
+For **local Vite dev** (hot reload), run **`npm run consumer`**, **`npm run publisher`**, and **`npm run frontend`** (`prefrontend` runs **`npm run sync-config`** from **`demo.env`**).
 
 **Start/stop apps independently** — use container names, for example:
 
@@ -142,48 +129,48 @@ cp demo.env.example demo.env
 
 If you already use **`solace.env`** from an older checkout, rename it to **`demo.env`** (same contents).
 
-Set **`DEMO_PROFILE`** to the profile JSON path (relative to repo root or absolute), for example `./profiles/finance.json`. Queue names and Solace connection settings stay in **`demo.env`**.
+Regenerate the browser runtime config after edits:
 
-Example aligned with this repo’s defaults:
+```bash
+npm run sync-config
+```
+
+**`demo.env`** is the single source of truth for Solace connection, publish rate, and dashboard settings. **`frontend/public/config.js`** is auto-generated — do not edit by hand. See [`.dev/pm/impl-central-config.md`](.dev/pm/impl-central-config.md).
+
+Example (local host):
 
 ```env
 SOLACE_HOST=ws://localhost:8008
 SOLACE_VPN=default
 SOLACE_USERNAME=default
 SOLACE_PASSWORD=default
-
-DEMO_PROFILE=./profiles/finance.json
-
-PUBLISH_RATE=2
-
-QUEUE_PARTITIONED=Demo_PQ
-QUEUE_NON_EXCLUSIVE=Demo_NQ
-QUEUE_EXCLUSIVE=Demo_EQ
+PUBLISH_RATE=10
+NQ_PREDICTION_CONSUMER=1
 ```
 
-**Topic subscriptions on the broker** must cover the traffic your profile publishes. With the **Docker** setup above, **`solace/demo/>`** is applied automatically and matches both packaged profiles (`solace/demo/stocks/orders/...`, `solace/demo/retail/...`). On a **broker you manage yourself**, subscribe each queue to **`{messaging.topicPrefix}/>`** from the same JSON as **`DEMO_PROFILE`** (or an equivalent wildcard such as **`solace/demo/>`** if all your topics live under that prefix).
+**Docker Compose** uses the same **`demo.env`** file. Compose sets **`SOLACE_HOST=ws://solace-broker:8008`** on Node containers and **`SOLACE_PUBLIC_URL=ws://localhost:8008`** on the frontend unless you override them in **`demo.env`**.
 
-**Frontend Solace URL** must reach the broker Web Transport. In `frontend/src/config.js`, use **`VITE_SOLACE_URL`** (default **`ws://localhost:8008`**) or runtime **`public/config.js`** (`solaceUrl`).
+**Topic subscriptions on the broker** must cover traffic your profiles publish. With **Docker**, **`solace-init`** provisions queues and **`solace/demo/>`** (or profile-specific prefixes). On a **broker you manage yourself**, subscribe each queue to **`{messaging.topicPrefix}/>`** from the profile JSON (or a broader wildcard such as **`solace/demo/>`**).
 
 ### Choosing a profile
 
-Use **`DEMO_PROFILE`** for both **`npm run consumer`** and **`npm run publisher`** (same file, same path) so partition keys, topics, and payloads stay aligned. Optional npm scripts set the path for you: `npm run publisher:retail` / `npm run consumer:retail` (see root `package.json`). Sample profiles live under `profiles/` (`finance.json` enables **price prediction** and uses eight partition keys; `retail.json` is a fulfillment-style vertical with five keys). Partition key count is defined per profile (validated range in the loader); the **partitioned queue** on the broker must declare the **same** number of partitions as `messaging.partitionKeys.length`.
+All **`profiles/*.json`** files load automatically. Pick a profile in the dashboard header (no restart). Queue names and partition keys live in each profile JSON. Partition count on the broker must match **`messaging.partitionKeys.length`** for that profile.
 
-Setting **`features.pricePrediction`: `true`** (as in `finance.json`) adds the **Prediction** tab and prediction updates emitted from the **consumer** process; the profile must include loader-supported `price` and `quantity` fields (see `backend/lib/demoProfile.js` for constraints).
+Profiles with **`features.prediction`** show the **Prediction** tab (see `backend/lib/demoProfile.js` for field constraints).
 
-Solace **connection**, **VPN**, **credentials**, **queue names**, and **PUBLISH_RATE** remain environment-driven; the profile does not contain secrets.
+Solace **connection**, **VPN**, **credentials**, and **PUBLISH_RATE** stay in **`demo.env`**; profiles do not contain secrets.
 
 ### 4. Create queues on the broker
 
-**Using Docker (step 1)** — Queues and **`solace/demo/>`** subscriptions are created by **`solace-init`** from **`docker/demo.apps.env`**; **`PARTITION_COUNT`** there must match **`messaging.partitionKeys.length`** for the **`DEMO_PROFILE`** you set in the same file. Queue names in that file should match **`QUEUE_*`** in **`demo.env`** when you run Node on the host.
+**Using Docker (step 1)** — Queues and subscriptions are created by **`solace-init`** for every file under **`profiles/`** (queue names come from each profile’s **`queues`** block).
 
-**Manual or external broker** — Create these queues (names must match **`demo.env`** unless you override):
+**Manual or external broker** — Create queues named in your profile JSON (e.g. finance):
 
 | Queue name | Queue type | Partition count | Partition key property | Topic subscription |
 |------------|------------|-----------------|------------------------|--------------------|
-| `Demo_PQ` | Partitioned (non-exclusive queue with `partitionCount` > 0) | Same as `partitionKeys.length` in profile (e.g. 8 for `finance.json`, 5 for `retail.json`) | `JMSXGroupID` | Wildcard covering your profile topics (e.g. `{topicPrefix}/>` or `solace/demo/>`) |
-| `Demo_NQ` | Non-exclusive | — | — | same as partitioned queue |
-| `Demo_EQ` | Exclusive | — | — | same as partitioned queue |
+| `Finance_PQ` (per profile) | Partitioned | Same as `partitionKeys.length` in that profile | `JMSXGroupID` | `{topicPrefix}/>` or `solace/demo/>` |
+| `Finance_NQ` | Non-exclusive | — | — | same |
+| `Finance_EQ` | Exclusive | — | — | same |
 
 ### 5. Run the app
 
@@ -192,14 +179,14 @@ The **consumer** process (15 queue consumers + catalog topic publisher) must run
 
 ```bash
 # Terminal 1: consumers + solace/catalog topics
-npm run consumer:finance
+npm run consumer
 
-# Terminal 2: publisher + Vite (see root package.json "dev")
+# Terminal 2: publisher + Vite (sync-config runs automatically)
 npm run dev
 
 # Or run all components separately:
-npm run consumer:finance
-npm run publisher:finance
+npm run consumer
+npm run publisher
 npm run frontend
 ```
 
@@ -217,7 +204,7 @@ URL: **http://localhost:3000**.
 
 **Queue panels** (one per queue type)
 
-- **Queue name** from the consumer (matches `QUEUE_*` in `demo.env`), not hardcoded in the UI  
+- **Queue name** from the active profile JSON, not hardcoded in the UI  
 - **Operational status** — HEALTHY, DEGRADED, or DOWN (plus UNKNOWN while warming up)  
 - **Connected consumers** — count of connected / active / standby vs total (5 per queue type in this demo)  
 - **Partitioned queue only** — broker partition state in brackets: BALANCED, REBALANCING, or UNKNOWN  
@@ -230,7 +217,7 @@ URL: **http://localhost:3000**.
 
 **Prediction view** (details in [Finance profile and the Prediction UI](#finance-profile-and-the-prediction-ui); finance-style profiles only)
 
-- Requires **`npm run publisher`** with the same `DEMO_PROFILE` so actual prices and stats flow to the UI  
+- Requires **`npm run publisher`** so actual prices and stats flow to the UI  
 - Charts **actual** publisher prices vs **partitioned-queue** and **non-exclusive** consumer-side predictions (NQ chart uses one canonical consumer index; keep backend **`NQ_PREDICTION_CONSUMER`** and frontend **`VITE_NQ_PREDICTION_CONSUMER`** aligned — see `demo.env.example`)
 
 **Quick experiments**
@@ -252,7 +239,7 @@ The default profile **`profiles/finance.json`** sets **`features.pricePrediction
 | UI | What you see |
 |----|----------------|
 | **Message Flow** | Publisher strip + three queue panels + five consumer tiles per queue (same as other profiles). |
-| **Prediction** | Header tabs switch to [`frontend/src/components/PredictionView.jsx`](frontend/src/components/PredictionView.jsx): **per-symbol** price charts with **Actual** (solid line, from **`publisherStats`** on the catalog stats topic), **PQ** (partitioned-queue consumer prediction), and **NQ** (non-exclusive prediction, dashed — one canonical consumer so the line is stable; set **`NQ_PREDICTION_CONSUMER`** and **`VITE_NQ_PREDICTION_CONSUMER`** to the same index, default `1`). Charts include recency / “closeness” style readouts derived from recent prediction error. |
+| **Prediction** | Header tabs switch to [`frontend/src/components/PredictionView.jsx`](frontend/src/components/PredictionView.jsx): **per-symbol** price charts with **Actual** (solid line, from **`publisherStats`** on the catalog stats topic), **PQ** (partitioned-queue consumer prediction), and **NQ** (non-exclusive prediction, dashed — one canonical consumer so the line is stable; set **`NQ_PREDICTION_CONSUMER`** in **`demo.env`**, default `1`). Charts include recency / “closeness” style readouts derived from recent prediction error. |
 
 **Retail** (`profiles/retail.json`) and profiles **without** `features.pricePrediction` only show **Message Flow** (no Prediction tab).
 
@@ -260,14 +247,14 @@ The default profile **`profiles/finance.json`** sets **`features.pricePrediction
 
 ```
 Publisher (Node.js)
-    ↓ loads DEMO_PROFILE (JSON)
+    ↓ loads all profiles/*.json
     ↓ publishes to topic: {topicPrefix}/{suffix from payload}
     ↓ (with JMSXGroupID = partition index)
     ↓
 Three Queues (wildcard subscription covering profile topics — e.g. `{topicPrefix}/>` or `solace/demo/>` from Docker init)
-    ├── Demo_PQ (Partitioned Queue) — partition count = partitionKeys.length in profile
-    ├── Demo_NQ (Non-Exclusive Queue)
-    └── Demo_EQ (Exclusive Queue)
+    ├── {Profile}_PQ (Partitioned Queue) — partition count = partitionKeys.length in profile
+    ├── {Profile}_NQ (Non-Exclusive Queue)
+    └── {Profile}_EQ (Exclusive Queue)
     ↓
 15 Consumers (5 per queue type) — if finance + pricePrediction: prediction hints on solace/catalog/events/{profileId}
     ↓
@@ -317,11 +304,14 @@ partitioned-queue-demo-node/
 ├── Dockerfile
 ├── docker-compose.yml         # solace-broker + solace-init + consumer + publisher + frontend
 ├── Dockerfile.frontend      # Vite build + nginx for dashboard (:3000 on host)
+├── demo.env.example           # copy to demo.env (single config source)
 ├── docker/
-│   ├── demo.apps.env
+│   ├── entrypoint-frontend.sh # generates config.js from env at container start
 │   └── nginx-frontend.conf
 ├── scripts/
-│   └── setup-solace.sh        # SEMP: Demo_PQ / Demo_NQ / Demo_EQ + solace/demo/>
+│   ├── readDemoEnv.js
+│   ├── sync-frontend-config.js
+│   └── setup-solace.sh        # SEMP: per-profile queues + subscriptions
 ├── backend/
 │   ├── lib/
 │   │   └── demoProfile.js   # load + validate profile; message helpers
@@ -338,7 +328,9 @@ partitioned-queue-demo-node/
 ├── frontend/
 │   ├── src/
 │   │   ├── App.jsx
-│   │   ├── config.js    # Solace Web Transport (VITE_SOLACE_*); runtime config.js overrides
+│   │   ├── config.js    # generated from demo.env (npm run sync-config)
+│   ├── public/
+│   │   └── config.js    # window.__DEMO_CONFIG__ (auto-generated)
 │   │   ├── hooks/useSolaceDashboard.js
 │   │   ├── uiTopics.js
 │   │   └── components/
@@ -357,14 +349,11 @@ partitioned-queue-demo-node/
 | Script | Purpose |
 |--------|---------|
 | `npm run install-all` | Install root + frontend dependencies |
-| `npm run test` | Unit tests (profile loader) |
-| `npm run publisher` | Publisher only (uses `DEMO_PROFILE` or default `./profiles/finance.json`) |
-| `npm run publisher:finance` | Publisher with `profiles/finance.json` |
-| `npm run publisher:retail` | Publisher with `profiles/retail.json` |
-| `npm run consumer` | 15 queue consumers + `solace/catalog` UI topics |
-| `npm run consumer:finance` | Consumer + WS with `profiles/finance.json` |
-| `npm run consumer:retail` | Consumer + WS with `profiles/retail.json` |
-| `npm run frontend` | Vite dev server |
+| `npm run sync-config` | Regenerate `frontend/public/config.js` from `demo.env` |
+| `npm run test` | Unit tests (profile loader, config) |
+| `npm run publisher` | Publisher for all profiles |
+| `npm run consumer` | Consumers + `solace/catalog` UI topics (all profiles) |
+| `npm run frontend` | Vite dev server (runs `sync-config` first) |
 | `npm run dev` | Publisher + frontend (run `consumer` separately) |
 
 ### Technology stack
@@ -377,38 +366,28 @@ partitioned-queue-demo-node/
 
 | Variable | Description | Typical default |
 |----------|-------------|-----------------|
-| `SOLACE_HOST` | Broker WebSocket URL | `ws://localhost:8008` |
+| `SOLACE_HOST` | Broker WebSocket URL (Node apps) | `ws://localhost:8008` |
+| `SOLACE_PUBLIC_URL` | Browser Web Transport URL (optional; defaults to `SOLACE_HOST`) | — |
 | `SOLACE_VPN` | Message VPN | `default` |
 | `SOLACE_USERNAME` | Client username | `default` |
 | `SOLACE_PASSWORD` | Client password | `default` |
-| `DEMO_PROFILE` | Path to demo profile JSON (repo-relative or absolute) | `./profiles/finance.json` |
-| `PUBLISH_RATE` | Messages per second | `2` |
-| `TOPIC_PREFIX` | *(Deprecated when `DEMO_PROFILE` is set.)* Ignored; topic prefix comes from the profile | — |
-| `SYMBOLS` | *(Deprecated when `DEMO_PROFILE` is set.)* Ignored | — |
-| `QUEUE_PARTITIONED` | Partitioned queue name | `Demo_PQ` |
-| `QUEUE_NON_EXCLUSIVE` | Non-exclusive queue name | `Demo_NQ` |
-| `QUEUE_EXCLUSIVE` | Exclusive queue name | `Demo_EQ` |
-| `NQ_PREDICTION_CONSUMER` | Non-exclusive consumer number (1–5) whose prediction stream feeds the **Prediction** NQ line; must match the dashboard | `1` |
+| `PUBLISH_RATE` | Messages per second | `10` |
+| `NQ_PREDICTION_CONSUMER` | NQ consumer index (1–5) for prediction chart | `1` |
+| `VERSION` | Header version label | `3.4` |
+| `PROFILES_DIR` | Profile JSON directory | `./profiles` |
+| `MSG_VPN` / `SEMP_PORT` / `SEMP_WAIT_*` | Broker provisioning (`solace-init`, `setup-solace.sh`) | see `demo.env.example` |
 
-**Docker Compose** — **`docker/demo.apps.env`** is the single config file for **`solace-init`**, **`consumer`**, and **`publisher`** (profile, partitions, queues, Solace URLs, SEMP wait tuning). **`solace-init`** overrides **`SOLACE_HOST`** to the broker hostname for SEMP; **`SEMP_USER`** / **`SEMP_PASS`** stay **`admin`** from **`docker-compose.yml`**.
+**Docker Compose** — all app services use **`env_file: demo.env`** (optional if missing). Compose overrides **`SOLACE_HOST`** for in-network Node containers and sets **`SOLACE_PUBLIC_URL`** for the frontend container. Regenerate browser config: **`npm run sync-config`** (host) or recreate **`demo-frontend`** (container entrypoint).
 
-**Frontend image build** (optional overrides in **`docker-compose.yml`** or a project **`.env`** used only at **`docker compose build`** time):
-
-| Variable | Description | Typical default |
-|----------|-------------|-----------------|
-| `VITE_SOLACE_URL` | Solace Web Transport URL baked into the static dashboard (**from the browser**) | `ws://localhost:8008` |
-| `VITE_SOLACE_VPN` / `VITE_SOLACE_USERNAME` / `VITE_SOLACE_PASSWORD` | Browser session credentials | `default` |
-| `VITE_NQ_PREDICTION_CONSUMER` | Must match **`NQ_PREDICTION_CONSUMER`** in **`docker/demo.apps.env`** | `1` |
-
-**Frontend (Vite on host)** — optional: `VITE_SOLACE_*` overrides broker URL/credentials in `frontend/src/config.js`. Runtime **`public/config.js`** (or Docker **`dashboard-config.js`**) sets **`solaceUrl`**, **`solaceVpn`**, etc. **`VITE_NQ_PREDICTION_CONSUMER`** must match **`NQ_PREDICTION_CONSUMER`** when using prediction charts.
+**Frontend** — **`frontend/public/config.js`** is generated from **`demo.env`**; do not edit by hand. **`VITE_SOLACE_*`** remains an emergency fallback only.
 
 ### Troubleshooting
 
 **Consumers not connecting**
 
 - Confirm **`demo.env`** host, VPN, user, password.  
-- Ensure all three queues exist and subscribe to a topic wildcard that covers your **`DEMO_PROFILE`** (Docker: **`solace/demo/>`** via **`solace-init`**; otherwise **`{topicPrefix}/>`**).  
-- Partitioned queue: **partition count = `partitionKeys.length` in your profile** (Docker: when **`PARTITION_COUNT`** in **`docker/demo.apps.env`** changes, re-run **`solace-init`** — see **Profile (Docker) and UI** above). Partition key **JMSXGroupID**.
+- Ensure queues for the selected profile exist and subscribe to a matching topic wildcard (Docker: re-run **`solace-init`** after profile JSON changes).  
+- Partitioned queue: **partition count = `partitionKeys.length` in that profile**. Partition key **JMSXGroupID**.
 
 **No messages**
 
@@ -418,7 +397,7 @@ partitioned-queue-demo-node/
 **UI not updating**
 
 - The **consumer** process must be running — locally **`npm run consumer`**, or the **`demo-consumer`** container.  
-- Browser must reach **Web Transport** on **`8008`** (`config.js` **`solaceUrl`** or **`VITE_SOLACE_URL`**; remote VM: open NSG/firewall for **8008**).  
+- Browser must reach **Web Transport** on **`8008`** (`SOLACE_PUBLIC_URL` in **`demo.env`** → generated **`config.js`**; remote VM: open NSG/firewall for **8008**).  
 - Header should show **Connected to Solace**. In PubSub+ Manager, watch **`solace/catalog/events/{profileId}`** and **`solace/catalog/stats/{profileId}/publisher`**.
 
 **Publisher panel shows Inactive**
@@ -443,7 +422,7 @@ partitioned-queue-demo-node/
 
 **`solace-broker-init` exits 1** (SEMP / queue setup failed)
 
-- **`solace-init`** starts only after **`solace-broker`** is **healthy**, then waits for SEMP (see **`SEMP_WAIT_*`** in **`docker/demo.apps.env`**), with retries on **502/503/504** for queue and subscription writes. On very slow disks, raise those values in **`docker/demo.apps.env`**.  
+- **`solace-init`** starts only after **`solace-broker`** is **healthy**, then waits for SEMP (see **`SEMP_WAIT_*`** in **`demo.env`**), with retries on **502/503/504** for queue and subscription writes. On very slow disks, raise those values in **`demo.env`**.  
 - Re-run provisioning: **`docker compose run --rm solace-init`**.
 
 ## License

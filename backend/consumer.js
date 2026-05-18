@@ -1,6 +1,7 @@
 const solace = require('solclientjs');
-const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '..', 'demo.env') });
+const { loadDemoEnv } = require('./lib/solaceEnv');
+
+loadDemoEnv();
 
 const { DashboardBridge } = require('./lib/dashboardBridge');
 

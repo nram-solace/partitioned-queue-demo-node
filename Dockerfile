@@ -6,7 +6,6 @@ RUN npm install --omit=dev
 
 COPY backend ./backend
 COPY profiles ./profiles
-
-COPY docker/demo.apps.env ./demo.env
+COPY scripts ./scripts
 
 CMD ["node", "backend/consumer.js"]

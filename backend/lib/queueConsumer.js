@@ -1,4 +1,5 @@
 const solace = require('solclientjs');
+const { getSolaceSessionProps } = require('./solaceEnv');
 const {
   createConsumerEngine,
   getAlgorithmId,
@@ -31,13 +32,11 @@ class QueueConsumer {
   connect() {
     return new Promise((resolve, reject) => {
       try {
-        this.session = solace.SolclientFactory.createSession({
-          url: process.env.SOLACE_HOST || 'ws://localhost:8008',
-          vpnName: process.env.SOLACE_VPN || 'default',
-          userName: process.env.SOLACE_USERNAME || 'default',
-          password: process.env.SOLACE_PASSWORD || 'default',
-          clientName: `Consumer-${this.profileId}-${this.queueType}-${this.consumerNumber}-${Date.now()}`,
-        });
+        this.session = solace.SolclientFactory.createSession(
+          getSolaceSessionProps({
+            clientName: `Consumer-${this.profileId}-${this.queueType}-${this.consumerNumber}-${Date.now()}`,
+          }),
+        );
 
         this.session.on(solace.SessionEventCode.UP_NOTICE, () => {
           this.createMessageConsumer();

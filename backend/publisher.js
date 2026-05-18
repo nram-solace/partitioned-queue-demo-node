@@ -1,6 +1,7 @@
 const solace = require('solclientjs');
-const path = require('path');
-require('dotenv').config({ path: path.resolve(__dirname, '..', 'demo.env') });
+const { getSolaceSessionProps, loadDemoEnv } = require('./lib/solaceEnv');
+
+loadDemoEnv();
 
 const {
   listDemoProfiles,
@@ -62,13 +63,11 @@ class DemoPublisher {
     return new Promise((resolve, reject) => {
       try {
         this.initialConnectResolve = resolve;
-        this.session = solace.SolclientFactory.createSession({
-          url: process.env.SOLACE_HOST || 'ws://localhost:8008',
-          vpnName: process.env.SOLACE_VPN || 'default',
-          userName: process.env.SOLACE_USERNAME || 'default',
-          password: process.env.SOLACE_PASSWORD || 'default',
-          clientName: `Publisher-${this.profile.id}-${Date.now()}`,
-        });
+        this.session = solace.SolclientFactory.createSession(
+          getSolaceSessionProps({
+            clientName: `Publisher-${this.profile.id}-${Date.now()}`,
+          }),
+        );
 
         this.session.on(solace.SessionEventCode.UP_NOTICE, () => {
           console.log(`✅ Publisher connected [${this.profile.id}]`);

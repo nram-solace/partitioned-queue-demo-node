@@ -6,24 +6,18 @@ COPY frontend/package.json ./
 RUN npm install
 
 COPY frontend/ ./
-
-# Baked at build time (Vite); browser reaches PubSub+ Web Transport (default :8008).
-ARG VITE_SOLACE_URL=ws://localhost:8008
-ARG VITE_SOLACE_VPN=default
-ARG VITE_SOLACE_USERNAME=default
-ARG VITE_SOLACE_PASSWORD=default
-ARG VITE_NQ_PREDICTION_CONSUMER=1
-ARG VITE_DASHBOARD_VERSION=3.4
-ENV VITE_SOLACE_URL=${VITE_SOLACE_URL}
-ENV VITE_SOLACE_VPN=${VITE_SOLACE_VPN}
-ENV VITE_SOLACE_USERNAME=${VITE_SOLACE_USERNAME}
-ENV VITE_SOLACE_PASSWORD=${VITE_SOLACE_PASSWORD}
-ENV VITE_NQ_PREDICTION_CONSUMER=${VITE_NQ_PREDICTION_CONSUMER}
-ENV VITE_DASHBOARD_VERSION=${VITE_DASHBOARD_VERSION}
+COPY demo.env.example /demo.env.example
+COPY scripts/readDemoEnv.js scripts/sync-frontend-config.js /scripts/
+RUN DEMO_ENV_PATH=/demo.env.example node /scripts/sync-frontend-config.js /build/public/config.js
 
 RUN npm run build
 
 FROM nginx:1.27-alpine
+RUN apk add --no-cache nodejs
 COPY docker/nginx-frontend.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /build/dist /usr/share/nginx/html
+COPY scripts/readDemoEnv.js scripts/sync-frontend-config.js /opt/demo-config/
+COPY docker/entrypoint-frontend.sh /docker-entrypoint-frontend.sh
+RUN chmod +x /docker-entrypoint-frontend.sh
 EXPOSE 80
+ENTRYPOINT ["/docker-entrypoint-frontend.sh"]

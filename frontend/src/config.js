@@ -8,19 +8,19 @@ function readRuntimeDashboardConfig() {
 
 const rt = readRuntimeDashboardConfig()
 
-/** Shown in the dashboard header; set in `public/config.js` / `docker/dashboard-config.js` as `version`, or `VITE_DASHBOARD_VERSION`. */
-export const DASHBOARD_VERSION = (() => {
+/** Shown in the dashboard header; set in generated `public/config.js` (`VERSION` in `demo.env`) or `VITE_VERSION`. */
+export const VERSION = (() => {
   const fromRt = rt.version
   if (typeof fromRt === 'string' && fromRt.trim() !== '') return fromRt.trim()
   if (typeof fromRt === 'number' && Number.isFinite(fromRt)) return String(fromRt)
-  const env = import.meta.env.VITE_DASHBOARD_VERSION
+  const env = import.meta.env.VITE_VERSION
   if (typeof env === 'string' && env.trim() !== '') return env.trim()
   return '3.4'
 })()
 
 /** e.g. `v2.1` for the main title line */
 export function dashboardVersionLabel() {
-  const s = DASHBOARD_VERSION
+  const s = VERSION
   return s.startsWith('v') ? s : `v${s}`
 }
 
@@ -53,7 +53,8 @@ function rewriteLocalhostWsUrl(urlStr, defaultPort = DEFAULT_SOLACE_WS_PORT) {
 
 /**
  * Solace Web Transport session settings for the dashboard (catalog control plane).
- * Call at connect time so `/config.js` has set `window.__DEMO_CONFIG__`.
+ * Runtime values come from `public/config.js` (generated from `demo.env` via `npm run sync-config`).
+ * `VITE_SOLACE_*` is an emergency fallback only when config.js is missing.
  */
 export function getSolaceSessionConfig() {
   const rtNow = readRuntimeDashboardConfig()

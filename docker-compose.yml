@@ -56,9 +56,9 @@ services:
     volumes:
       - ./scripts:/app/scripts:ro
     env_file:
-      - ./docker/demo.apps.env
+      - path: ./demo.env
+        required: false
     environment:
-      # SEMP uses plain hostname; SOLACE_HOST in the file is the ws:// URL for Node apps.
       SOLACE_HOST: solace-broker
       SEMP_USER: admin
       SEMP_PASS: admin
@@ -70,7 +70,7 @@ services:
         apk add --no-cache curl jq >/dev/null
         exec /bin/sh /app/scripts/setup-solace.sh
 
-  # Node consumer + publisher (config: docker/demo.apps.env).
+  # Node consumer + publisher (config: demo.env at repo root).
   consumer:
     build:
       context: .
@@ -84,7 +84,10 @@ services:
       solace-init:
         condition: service_completed_successfully
     env_file:
-      - ./docker/demo.apps.env
+      - path: ./demo.env
+        required: false
+    environment:
+      SOLACE_HOST: ws://solace-broker:8008
     restart: unless-stopped
 
   publisher:
@@ -102,7 +105,10 @@ services:
       consumer:
         condition: service_started
     env_file:
-      - ./docker/demo.apps.env
+      - path: ./demo.env
+        required: false
+    environment:
+      SOLACE_HOST: ws://solace-broker:8008
     restart: unless-stopped
 
   # Static React dashboard (Vite build); browser uses Web Transport :8008 → broker.
@@ -110,21 +116,16 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.frontend
-      args:
-        VITE_SOLACE_URL: ${VITE_SOLACE_URL:-ws://localhost:8008}
-        VITE_SOLACE_VPN: ${VITE_SOLACE_VPN:-default}
-        VITE_SOLACE_USERNAME: ${VITE_SOLACE_USERNAME:-default}
-        VITE_SOLACE_PASSWORD: ${VITE_SOLACE_PASSWORD:-default}
-        VITE_NQ_PREDICTION_CONSUMER: ${VITE_NQ_PREDICTION_CONSUMER:-1}
-        VITE_DASHBOARD_VERSION: ${VITE_DASHBOARD_VERSION:-3.4}
     image: partitioned-queue-demo-frontend:local
     container_name: demo-frontend
     depends_on:
       consumer:
         condition: service_started
-    volumes:
-      # Runtime Solace URL for browsers on another host — edit docker/dashboard-config.js (no image rebuild).
-      - ./docker/dashboard-config.js:/usr/share/nginx/html/config.js:ro
+    env_file:
+      - path: ./demo.env
+        required: false
+    environment:
+      SOLACE_PUBLIC_URL: ${SOLACE_PUBLIC_URL:-ws://localhost:8008}
     ports:
       - "3000:80"
     restart: unless-stopped
@@ -134,4 +135,3 @@ volumes:
     driver: local
   solace-logs:
     driver: local
-

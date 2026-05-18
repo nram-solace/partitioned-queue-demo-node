@@ -1,17 +1,14 @@
 const solace = require('solclientjs');
+const { getSolaceSessionProps } = require('./solaceEnv');
 const { wrapUiEnvelope } = require('./uiEnvelope');
 const { catalogProfiles, events, sessionSnapshot } = require('./uiTopics');
 const { commandWildcard } = require('./commandTopics');
 const { slimProfile, attachJsonPayload, parseJsonAttachment } = require('./catalogPayload');
 
 function createSessionProps(suffix) {
-  return {
-    url: process.env.SOLACE_HOST || 'ws://localhost:8008',
-    vpnName: process.env.SOLACE_VPN || 'default',
-    userName: process.env.SOLACE_USERNAME || 'default',
-    password: process.env.SOLACE_PASSWORD || 'default',
+  return getSolaceSessionProps({
     clientName: `catalog-ui-${suffix}-${Date.now()}`,
-  };
+  });
 }
 
 /**
