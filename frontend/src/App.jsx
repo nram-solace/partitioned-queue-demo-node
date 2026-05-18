@@ -166,16 +166,14 @@ function App() {
       publishedCount: data.publishedCount,
       rate: data.rate,
       topicName: data.topicName || '',
-      ...(data.actualPrices && typeof data.actualPrices === 'object'
-        ? { actualPrices: data.actualPrices }
-        : {}),
+      ...(data.actuals && typeof data.actuals === 'object' ? { actuals: data.actuals } : {}),
       ...(data.publishedCountBySymbol && typeof data.publishedCountBySymbol === 'object'
         ? { publishedCountBySymbol: data.publishedCountBySymbol }
         : prev.publishedCountBySymbol && Object.keys(prev.publishedCountBySymbol).length > 0
           ? { publishedCountBySymbol: prev.publishedCountBySymbol }
           : {}),
     }))
-    if (data.actualPrices && typeof data.actualPrices === 'object') {
+    if (data.actuals && typeof data.actuals === 'object') {
       const pc = data.publishedCount
       if (typeof pc === 'number' && pc === lastRollingPublisherCountRef.current) {
         return
@@ -184,22 +182,22 @@ function App() {
         lastRollingPublisherCountRef.current = pc
       }
 
-      setLatestActual(data.actualPrices)
-      latestActualRef.current = { ...data.actualPrices }
+      setLatestActual(data.actuals)
+      latestActualRef.current = { ...data.actuals }
       const timestamp = Date.now()
       setPriceHistory((prev) => {
         const next = { ...prev }
-        Object.entries(data.actualPrices).forEach(([symbol, actual]) => {
-          const preds = predictionsRef.current[symbol] || {}
+        Object.entries(data.actuals).forEach(([seriesKey, actual]) => {
+          const preds = predictionsRef.current[seriesKey] || {}
           const point = {
             time: timestamp,
             actual,
             pq: preds.pq ?? null,
             nq: preds.nq ?? null,
           }
-          const history = [...(next[symbol] || []), point]
+          const history = [...(next[seriesKey] || []), point]
           if (history.length > HISTORY_LIMIT) history.shift()
-          next[symbol] = history
+          next[seriesKey] = history
         })
         return next
       })
@@ -356,12 +354,16 @@ function App() {
         },
         onOrder: updateConsumer,
         onPrediction: (msg) => {
+          const seriesKey = msg.seriesKey
+          const predicted = msg.predicted
+          if (seriesKey == null || typeof predicted !== 'number') return
           const field = msg.queueType === 'partitioned' ? 'pq' : 'nq'
-          if (!predictionsRef.current[msg.symbol]) predictionsRef.current[msg.symbol] = {}
-          predictionsRef.current[msg.symbol][field] = msg.predictedPrice
+          const key = String(seriesKey)
+          if (!predictionsRef.current[key]) predictionsRef.current[key] = {}
+          predictionsRef.current[key][field] = predicted
           setLatestPredictions((prev) => ({
             ...prev,
-            [msg.symbol]: { ...prev[msg.symbol], [field]: msg.predictedPrice },
+            [key]: { ...prev[key], [field]: predicted },
           }))
         },
         onStatus: updateConsumerStatus,
@@ -438,9 +440,7 @@ function App() {
     if (t) {
       document.title = t
     }
-    if (!profile.features?.pricePrediction) {
-      setActiveView('cards')
-    }
+
   }, [profile])
 
   useEffect(() => {
@@ -473,8 +473,7 @@ function App() {
   const qNonEx = queueNames?.nonExclusive ?? '…'
   const qEx = queueNames?.exclusive ?? '…'
 
-  const showPricePrediction = !!profile?.features?.pricePrediction
-  const chartSymbols = (
+  const chartSeriesKeys = (
     Object.keys(latestActual).length > 0
       ? Object.keys(latestActual)
       : profile?.messaging?.partitionKeys ?? []
@@ -493,7 +492,6 @@ function App() {
         onProfileChange={handleProfileChange}
         activeView={activeView}
         onViewChange={setActiveView}
-        showPrediction={showPricePrediction}
       />
 
       {activeView === 'cards' ? (
@@ -538,12 +536,13 @@ function App() {
         </div>
       ) : (
         <PredictionView
-          symbols={chartSymbols}
+          seriesKeys={chartSeriesKeys}
+          uiPrediction={profile?.ui?.prediction}
           canonicalNqConsumer={CANONICAL_NQ_CONSUMER}
-          priceHistory={priceHistory}
-          latestActual={latestActual}
+          seriesHistory={priceHistory}
+          latestActuals={latestActual}
           latestPredictions={latestPredictions}
-          publishedCountBySymbol={sessionPublishedCountBySymbol}
+          publishedCountBySeries={sessionPublishedCountBySymbol}
         />
       )}
     </div>

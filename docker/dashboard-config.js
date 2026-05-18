@@ -5,7 +5,7 @@
  * Bind-mounted over /usr/share/nginx/html/config.js — restart frontend after edits.
  */
 window.__DEMO_CONFIG__ = {
-  version: '3.1',
+  version: '3.3',
   solaceUrl: null,
   solaceVpn: null,
   solaceUsername: null,

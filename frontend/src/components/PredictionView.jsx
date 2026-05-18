@@ -6,6 +6,7 @@ import {
   closenessPctFromMeanGap,
   MIN_SAMPLES_FOR_CLOSENESS_METRIC,
 } from '../config'
+import { formatPredictionValue } from '../utils/formatPredictionValue'
 
 /**
  * Mean |pred − actual| / actual over recent chart points (same rows the lines use), so the bar tracks the graph.
@@ -179,12 +180,21 @@ function PredictionChannelRow({
   )
 }
 
-function PredictionCard({ symbol, priceHistory, latestActual, latestPredictions, publishedCountBySymbol }) {
-  const history = priceHistory[symbol] || []
-  const actual = latestActual[symbol]
-  const pqPred = latestPredictions[symbol]?.pq
-  const nqPred = latestPredictions[symbol]?.nq
-  const publishedEvents = publishedCountBySymbol?.[symbol]
+function PredictionCard({
+  seriesKey,
+  seriesHistory,
+  latestActuals,
+  latestPredictions,
+  publishedCountBySeries,
+  uiPrediction,
+}) {
+  const history = seriesHistory[seriesKey] || []
+  const actual = latestActuals[seriesKey]
+  const pqPred = latestPredictions[seriesKey]?.pq
+  const nqPred = latestPredictions[seriesKey]?.nq
+  const publishedEvents = publishedCountBySeries?.[seriesKey]
+  const seriesLabel = uiPrediction?.seriesLabel || 'Series'
+  const valueLabel = uiPrediction?.valueLabel || 'Value'
 
   const pqDelta = actual && pqPred != null ? ((pqPred - actual) / actual) * 100 : null
   const nqDelta = actual && nqPred != null ? ((nqPred - actual) / actual) * 100 : null
@@ -204,26 +214,36 @@ function PredictionCard({ symbol, priceHistory, latestActual, latestPredictions,
     CHART_ACCURACY_SHARED_MAX_GAP_PERCENT,
   )
 
-  const eventsSuffix =
+  const eventsLabel =
     typeof publishedEvents === 'number'
       ? ` (${publishedEvents.toLocaleString()} ${publishedEvents === 1 ? 'event' : 'events'})`
       : ''
 
   return (
     <div className="bg-slate-800 rounded-xl p-5 border border-slate-700">
-      <div className="flex items-center justify-between mb-3">
-        <span
-          className="text-xl font-bold text-white"
-          title="Published messages for this symbol since this dashboard connected (matches the chart window scope)"
-        >
-          {symbol}
-          {eventsSuffix ? (
-            <span className="text-slate-400 font-semibold font-sans text-lg">{eventsSuffix}</span>
-          ) : null}
-        </span>
-        <span className="text-2xl font-mono font-semibold text-slate-100">
-          {actual != null ? `$${actual.toFixed(2)}` : '—'}
-        </span>
+      <div
+        className="mb-3 space-y-1.5"
+        title={`${seriesKey}${eventsLabel} — ${valueLabel}: ${formatPredictionValue(actual, uiPrediction)}`}
+      >
+        <div className="flex items-baseline justify-between gap-4">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1 min-w-0">
+            <span className="text-xl font-bold text-white">{seriesKey}</span>
+            {eventsLabel ? (
+              <span className="text-slate-400 font-semibold font-sans text-base">{eventsLabel}</span>
+            ) : null}
+          </div>
+          <span className="text-base text-slate-400 font-sans shrink-0 text-right">
+            <span className="text-slate-500">{valueLabel}:</span>{' '}
+            <span className="font-mono font-semibold text-slate-100 text-lg tabular-nums">
+              {formatPredictionValue(actual, uiPrediction)}
+            </span>
+          </span>
+        </div>
+        <p className="text-xs text-slate-500 leading-snug">
+          Predicting{' '}
+          <span className="text-slate-400">{valueLabel.toLowerCase()}</span> per{' '}
+          {seriesLabel.toLowerCase()} (publisher actual vs PQ / NQ estimates)
+        </p>
       </div>
 
       <div className="h-48 mb-3">
@@ -240,7 +260,7 @@ function PredictionCard({ symbol, priceHistory, latestActual, latestPredictions,
                   borderRadius: '8px',
                   fontSize: '12px',
                 }}
-                formatter={(v, name) => [`$${v != null ? Number(v).toFixed(2) : '—'}`, name]}
+                formatter={(v, name) => [formatPredictionValue(v != null ? Number(v) : null, uiPrediction), name]}
                 labelFormatter={() => ''}
               />
               <Line
@@ -304,13 +324,16 @@ function PredictionCard({ symbol, priceHistory, latestActual, latestPredictions,
 }
 
 export default function PredictionView({
-  symbols,
+  seriesKeys,
+  uiPrediction,
   canonicalNqConsumer,
-  priceHistory,
-  latestActual,
+  seriesHistory,
+  latestActuals,
   latestPredictions,
-  publishedCountBySymbol = {},
+  publishedCountBySeries = {},
 }) {
+  const seriesLabel = uiPrediction?.seriesLabel || 'partition key'
+  const valueLabel = uiPrediction?.valueLabel || 'value'
   const [helpOpen, setHelpOpen] = useState(false)
 
   useEffect(() => {
@@ -365,11 +388,11 @@ export default function PredictionView({
               ×
             </button>
             <p className="text-slate-400 text-sm leading-relaxed">
-              PQ: one consumer per partition sees 100% of trades for its symbol in order — the model uses a{' '}
-              <strong>faster EMA</strong>, a <strong>short VWAP window</strong>, and a <strong>last-print</strong> blend so
-              it tracks the tape. NQ: competing consumers share work — the dashed line is{' '}
-              <strong>consumer {canonicalNqConsumer}</strong> only, with a smoother estimator trained on roughly 1/N of
-              each symbol&apos;s trades (not an average of all NQ instances).
+              PQ: one consumer per partition sees 100% of messages for its {seriesLabel.toLowerCase()} in order — the
+              model uses a <strong>faster EMA</strong>, a <strong>short weighted window</strong>, and a{' '}
+              <strong>last observation</strong> blend so it tracks publisher actuals. NQ: competing consumers share work
+              — the dashed line is <strong>consumer {canonicalNqConsumer}</strong> only, with a smoother estimator on
+              roughly 1/N of each {seriesLabel.toLowerCase()}&apos;s stream (not an average of all NQ instances).
             </p>
             <p className="text-slate-500 text-xs leading-relaxed mt-4 border-t border-slate-600 pt-3">
               <strong>Tile rows (PQ / NQ):</strong> each row is{' '}
@@ -377,7 +400,8 @@ export default function PredictionView({
               · <strong className="text-slate-400">μ≈</strong> (mean |Δ| on the <strong>chart</strong>, then{' '}
               <strong>mapped</strong> closeness) · <strong className="text-slate-400">bar</strong> ·{' '}
               <strong className="text-slate-400">%</strong>. The <strong>Δ value</strong> is the latest gap as a percent
-              of last published price (prediction minus actual), with <span className="text-sky-300">blue</span> when
+              of last published {valueLabel.toLowerCase()} (prediction minus actual), with{' '}
+              <span className="text-sky-300">blue</span> when
               above and <span className="text-red-300">red</span> when below. The <strong>μ≈</strong> label and{' '}
               <strong>bar + %</strong> use the same data as the lines: at each publisher snapshot we take actual and the
               PQ/NQ values shown on the chart, compute |pred − actual| / actual, and average the last up to{' '}
@@ -398,14 +422,15 @@ export default function PredictionView({
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        {symbols.map((symbol) => (
+        {seriesKeys.map((seriesKey) => (
           <PredictionCard
-            key={symbol}
-            symbol={symbol}
-            priceHistory={priceHistory}
-            latestActual={latestActual}
+            key={seriesKey}
+            seriesKey={seriesKey}
+            seriesHistory={seriesHistory}
+            latestActuals={latestActuals}
             latestPredictions={latestPredictions}
-            publishedCountBySymbol={publishedCountBySymbol}
+            publishedCountBySeries={publishedCountBySeries}
+            uiPrediction={uiPrediction}
           />
         ))}
       </div>

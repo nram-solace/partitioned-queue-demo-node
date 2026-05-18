@@ -10,8 +10,9 @@ function Header({
   onProfileChange,
   activeView,
   onViewChange,
-  showPrediction,
 }) {
+  const predictionUi = profile?.ui?.prediction
+  const predictionTabLabel = predictionUi?.tabLabel?.trim() || 'Prediction'
   const primaryTitle = `Solace Queue Types Demo - ${dashboardVersionLabel()}`
   const profileTitle = profile?.branding?.appTitle?.trim() || null
   const showPicker = catalogProfiles.length > 1
@@ -67,11 +68,11 @@ function Header({
                 {connected ? connectionLabel || 'Solace' : 'Disconnected'}
               </span>
             </div>
-            {showPrediction && typeof onViewChange === 'function' && (
+            {predictionUi && typeof onViewChange === 'function' && (
               <div className="flex bg-slate-700/50 rounded-lg p-1 gap-1">
                 {[
                   { key: 'cards', label: 'Message Flow' },
-                  { key: 'prediction', label: 'Prediction' },
+                  { key: 'prediction', label: predictionTabLabel },
                 ].map(({ key, label }) => (
                   <button
                     key={key}
