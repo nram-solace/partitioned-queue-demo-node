@@ -12,6 +12,9 @@ const FIELD_TYPES = new Set([
 ]);
 
 const FORMATS = new Set(['currency', 'number', 'text', 'badge']);
+const PREDICTION_VALUE_FORMATS = new Set(['currency', 'number', 'decimal']);
+
+const { resolvePlugin } = require('../prediction/registry');
 
 function validateDemoProfile(profile) {
   if (!profile || typeof profile !== 'object') {
@@ -175,22 +178,80 @@ function validateDemoProfile(profile) {
     }
   }
 
-  if (profile.features !== undefined) {
-    if (!profile.features || typeof profile.features !== 'object') {
-      throw new Error('Demo profile features must be a non-null object when present');
-    }
-    for (const k of Object.keys(profile.features)) {
-      if (k !== 'pricePrediction') {
-        throw new Error(`Unknown features key: ${k} (only pricePrediction is supported)`);
-      }
-    }
-    if (
-      profile.features.pricePrediction !== undefined &&
-      typeof profile.features.pricePrediction !== 'boolean'
-    ) {
-      throw new Error('features.pricePrediction must be a boolean when present');
+  if (!profile.features || typeof profile.features !== 'object') {
+    throw new Error('Demo profile requires object: features');
+  }
+  for (const k of Object.keys(profile.features)) {
+    if (k !== 'prediction') {
+      throw new Error(`Unknown features key: ${k} (only prediction is supported)`);
     }
   }
+  const pred = profile.features.prediction;
+  if (!pred || typeof pred !== 'object') {
+    throw new Error('Demo profile requires object: features.prediction');
+  }
+  if (typeof pred.plugin !== 'string' || !pred.plugin.trim()) {
+    throw new Error('features.prediction.plugin must be a non-empty string');
+  }
+  if (!pred.observationFields || typeof pred.observationFields !== 'object') {
+    throw new Error('features.prediction.observationFields is required');
+  }
+  for (const key of ['seriesKey', 'value', 'weight']) {
+    const fieldName = pred.observationFields[key];
+    if (typeof fieldName !== 'string' || !fieldName.trim()) {
+      throw new Error(`features.prediction.observationFields.${key} must be a non-empty string`);
+    }
+    if (!fieldNames.has(fieldName)) {
+      throw new Error(
+        `features.prediction.observationFields.${key} references unknown message field: ${fieldName}`,
+      );
+    }
+  }
+  const seriesField = profile.messageFields.find((x) => x.name === pred.observationFields.seriesKey);
+  if (!seriesField || seriesField.type !== 'partitionKey') {
+    throw new Error('features.prediction.observationFields.seriesKey must name a partitionKey field');
+  }
+  if (pred.observationFields.seriesKey !== m.partitionKeyField) {
+    throw new Error(
+      'features.prediction.observationFields.seriesKey must match messaging.partitionKeyField',
+    );
+  }
+  const valueObsField = profile.messageFields.find((x) => x.name === pred.observationFields.value);
+  if (!valueObsField || valueObsField.type !== 'float') {
+    throw new Error('features.prediction.observationFields.value must name a float message field');
+  }
+  const weightObsField = profile.messageFields.find((x) => x.name === pred.observationFields.weight);
+  if (!weightObsField || weightObsField.type !== 'int') {
+    throw new Error('features.prediction.observationFields.weight must name an int message field');
+  }
+  if (pred.params !== undefined && (typeof pred.params !== 'object' || pred.params === null)) {
+    throw new Error('features.prediction.params must be an object when present');
+  }
+
+  const uiPred = profile.ui.prediction;
+  if (!uiPred || typeof uiPred !== 'object') {
+    throw new Error('Demo profile requires object: ui.prediction');
+  }
+  for (const key of ['tabLabel', 'seriesLabel', 'valueLabel', 'valueFormat']) {
+    if (typeof uiPred[key] !== 'string' || !uiPred[key].trim()) {
+      throw new Error(`ui.prediction.${key} must be a non-empty string`);
+    }
+  }
+  if (!PREDICTION_VALUE_FORMATS.has(uiPred.valueFormat)) {
+    throw new Error(
+      `ui.prediction.valueFormat must be one of: ${[...PREDICTION_VALUE_FORMATS].join(', ')}`,
+    );
+  }
+  if (uiPred.valueFormat === 'currency') {
+    if (typeof uiPred.currency !== 'string' || !uiPred.currency.trim()) {
+      throw new Error('ui.prediction.currency is required when valueFormat is currency');
+    }
+  }
+  if (uiPred.helpTopic !== undefined && (typeof uiPred.helpTopic !== 'string' || !uiPred.helpTopic.trim())) {
+    throw new Error('ui.prediction.helpTopic must be a non-empty string when present');
+  }
+
+  resolvePlugin(profile).validateProfile(profile);
 
   if (!profile.queues || typeof profile.queues !== 'object') {
     throw new Error('Demo profile requires object: queues');
@@ -199,30 +260,6 @@ function validateDemoProfile(profile) {
   for (const key of ['partitioned', 'nonExclusive', 'exclusive']) {
     if (typeof q[key] !== 'string' || !q[key].trim()) {
       throw new Error(`Demo profile requires non-empty string: queues.${key}`);
-    }
-  }
-
-  if (profile.features && profile.features.pricePrediction === true) {
-    const priceField = profile.messageFields.find((x) => x.name === 'price' && x.type === 'float');
-    if (!priceField || !priceField.baselineByPartitionKey) {
-      throw new Error(
-        'features.pricePrediction requires a float message field named "price" with baselineByPartitionKey',
-      );
-    }
-    const vol = priceField.volatilityByPartitionKey;
-    if (!vol || typeof vol !== 'object') {
-      throw new Error('features.pricePrediction requires price.volatilityByPartitionKey (object)');
-    }
-    for (const pk of m.partitionKeys) {
-      if (typeof vol[pk] !== 'number' || !(vol[pk] > 0)) {
-        throw new Error(
-          `features.pricePrediction requires price.volatilityByPartitionKey["${pk}"] to be a positive number`,
-        );
-      }
-    }
-    const qty = profile.messageFields.find((x) => x.name === 'quantity' && x.type === 'int');
-    if (!qty) {
-      throw new Error('features.pricePrediction requires an int message field named "quantity"');
     }
   }
 
@@ -422,10 +459,6 @@ function warnLegacyEnvIgnoredOnce() {
   );
 }
 
-function isPricePredictionEnabled(profile) {
-  return !!(profile && profile.features && profile.features.pricePrediction === true);
-}
-
 module.exports = {
   validateDemoProfile,
   loadDemoProfile,
@@ -437,5 +470,4 @@ module.exports = {
   jmsxGroupIdForMessage,
   topicForMessage,
   warnLegacyEnvIgnoredOnce,
-  isPricePredictionEnabled,
 };

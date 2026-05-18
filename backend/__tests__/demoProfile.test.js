@@ -9,7 +9,6 @@ const {
   generateMessageFromProfile,
   jmsxGroupIdForMessage,
   topicForMessage,
-  isPricePredictionEnabled,
 } = require('../lib/demoProfile');
 
 const financePath = path.join(__dirname, '../../profiles/finance.json');
@@ -19,23 +18,46 @@ test('parse and validate profiles/retail.json', () => {
   const p = loadDemoProfile(retailPath);
   validateDemoProfile(p);
   assert.equal(p.id, 'retail');
-  assert.equal(isPricePredictionEnabled(p), false);
+  assert.equal(p.features.prediction.plugin, 'retail-fulfillment-ema');
+  assert.equal(p.ui.prediction.valueFormat, 'currency');
 });
 
 test('parse and validate profiles/finance.json', () => {
   const p = loadDemoProfile(financePath);
   validateDemoProfile(p);
   assert.equal(p.id, 'finance');
-  assert.equal(isPricePredictionEnabled(p), true);
+  assert.equal(p.features.prediction.plugin, 'finance-ema-vwap');
   assert.equal(p.messaging.partitionKeys.length, 8);
   assert.equal(getQueueNames(p).partitioned, 'Finance_PQ');
 });
 
-test('listDemoProfiles loads finance and retail', () => {
+test('listDemoProfiles loads finance and retail with prediction', () => {
   const profiles = listDemoProfiles(path.join(__dirname, '../../profiles'));
   assert.equal(profiles.length, 2);
   assert.equal(profiles[0].id, 'finance');
   assert.equal(profiles[1].id, 'retail');
+  for (const p of profiles) {
+    assert.ok(p.features.prediction.plugin);
+    assert.ok(p.ui.prediction.tabLabel);
+  }
+});
+
+test('legacy pricePrediction flag is rejected', () => {
+  const p = loadDemoProfile(financePath);
+  p.features = { pricePrediction: true };
+  assert.throws(() => validateDemoProfile(p), /Unknown features key/);
+});
+
+test('missing prediction fails validation', () => {
+  const p = loadDemoProfile(retailPath);
+  delete p.features.prediction;
+  assert.throws(() => validateDemoProfile(p), /features\.prediction/);
+});
+
+test('unknown prediction plugin fails validation', () => {
+  const p = loadDemoProfile(financePath);
+  p.features.prediction.plugin = 'not-a-plugin';
+  assert.throws(() => validateDemoProfile(p), /Unknown prediction plugin/);
 });
 
 test('missing queues fails validation', () => {

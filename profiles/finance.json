@@ -2,7 +2,14 @@
   "schemaVersion": 1,
   "id": "finance",
   "features": {
-    "pricePrediction": true
+    "prediction": {
+      "plugin": "finance-ema-vwap",
+      "observationFields": {
+        "seriesKey": "symbol",
+        "value": "price",
+        "weight": "quantity"
+      }
+    }
   },
   "branding": {
     "appTitle": "Market data demo",
@@ -70,6 +77,14 @@
       { "field": "quantity", "label": "Qty", "format": "number" },
       { "field": "orderType", "label": "Type", "format": "text" }
     ],
+    "prediction": {
+      "tabLabel": "Prediction",
+      "seriesLabel": "Symbol",
+      "valueLabel": "Price",
+      "valueFormat": "currency",
+      "currency": "USD",
+      "helpTopic": "order-value"
+    },
     "colorStrategy": "hashPartitionKey"
   }
 }

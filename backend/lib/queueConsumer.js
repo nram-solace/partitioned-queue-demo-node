@@ -1,40 +1,16 @@
 const solace = require('solclientjs');
-
-class PredictionEngine {
-  constructor(queueType) {
-    this.queueType = queueType;
-    const isPq = queueType === 'partitioned';
-    this.isPq = isPq;
-    this.alpha = isPq ? 0.48 : 0.15;
-    this.maxWindow = 100;
-    this.ema = null;
-    this.window = [];
-    this.tradeCount = 0;
-  }
-
-  update(price, quantity) {
-    this.tradeCount++;
-    this.ema = this.ema === null ? price : this.alpha * price + (1 - this.alpha) * this.ema;
-    this.window.push({ price, quantity });
-    if (this.window.length > this.maxWindow) {
-      this.window.shift();
-    }
-    const totalQty = this.window.reduce((s, t) => s + t.quantity, 0);
-    const vwap =
-      totalQty === 0
-        ? price
-        : this.window.reduce((s, t) => s + t.price * t.quantity, 0) / totalQty;
-    const blended = this.isPq
-      ? 0.42 * this.ema + 0.33 * vwap + 0.25 * price
-      : 0.6 * this.ema + 0.4 * vwap;
-    return parseFloat(blended.toFixed(2));
-  }
-}
+const {
+  createConsumerEngine,
+  getAlgorithmId,
+  observationFromOrder,
+} = require('../prediction/runtime');
 
 class QueueConsumer {
   constructor(id, queueName, queueType, consumerNumber, partitionKeyField, onMessage, options = {}) {
     this.id = id;
-    this.profileId = options.profileId || 'demo';
+    this.profile = options.profile;
+    this.profileId = options.profileId || this.profile?.id || 'demo';
+    this.algorithmId = this.profile ? getAlgorithmId(this.profile) : null;
     this.queueName = queueName;
     this.queueType = queueType;
     this.consumerNumber = consumerNumber;
@@ -48,7 +24,6 @@ class QueueConsumer {
     this.startTime = Date.now();
     this.assignedPartitionKey = null;
     this.manualDisconnect = false;
-    this.pricePrediction = options.pricePrediction === true;
     this.canonicalNqConsumer = options.canonicalNqConsumer ?? 1;
     this.predictionEngines = new Map();
   }
@@ -146,32 +121,31 @@ class QueueConsumer {
       }
 
       if (
-        this.pricePrediction &&
+        this.profile &&
         (this.queueType === 'partitioned' || this.queueType === 'non-exclusive')
       ) {
         const useNqPrediction =
           this.queueType !== 'non-exclusive' || this.consumerNumber === this.canonicalNqConsumer;
         if (useNqPrediction) {
-          const seriesKey = orderData[this.partitionKeyField];
-          const price = orderData.price;
-          const quantity = orderData.quantity;
-          if (seriesKey != null && typeof price === 'number' && typeof quantity === 'number') {
-            const key = String(seriesKey);
-            let engine = this.predictionEngines.get(key);
+          const obs = observationFromOrder(orderData, this.profile);
+          if (obs) {
+            let engine = this.predictionEngines.get(obs.seriesKey);
             if (!engine) {
-              engine = new PredictionEngine(this.queueType);
-              this.predictionEngines.set(key, engine);
+              engine = createConsumerEngine(this.profile, this.queueType);
+              this.predictionEngines.set(obs.seriesKey, engine);
             }
-            const predictedPrice = engine.update(price, quantity);
+            const { predicted, samplesUsed } = engine.update(obs.value, obs.weight);
             this.onMessage({
               type: 'prediction',
+              profileId: this.profileId,
+              algorithmId: this.algorithmId,
               consumerId: this.id,
               queueType: this.queueType,
               consumerNumber: this.consumerNumber,
-              symbol: key,
-              predictedPrice,
-              tradePrice: price,
-              tradesUsed: engine.tradeCount,
+              seriesKey: obs.seriesKey,
+              predicted,
+              observed: obs.value,
+              samplesUsed,
             });
           }
         }
@@ -233,4 +207,4 @@ class QueueConsumer {
   }
 }
 
-module.exports = { QueueConsumer, PredictionEngine };
+module.exports = { QueueConsumer };

@@ -1,4 +1,4 @@
-const { getQueueNames, isPricePredictionEnabled } = require('./demoProfile');
+const { getQueueNames } = require('./demoProfile');
 const { slimProfile } = require('./catalogPayload');
 const { QueueConsumer } = require('./queueConsumer');
 
@@ -188,7 +188,6 @@ class ProfileConsumerManager {
     ];
 
     let consumerId = 1;
-    const pricePrediction = isPricePredictionEnabled(this.profile);
     const canonicalNqConsumer = parseInt(process.env.NQ_PREDICTION_CONSUMER || '1', 10);
 
     for (const queue of queues) {
@@ -216,7 +215,7 @@ class ProfileConsumerManager {
               this.checkExclusiveState();
             }
           },
-          { pricePrediction, canonicalNqConsumer, profileId: this.profile.id },
+          { profile: this.profile, canonicalNqConsumer, profileId: this.profile.id },
         );
         this.consumers.push(consumer);
         await consumer.connect();
