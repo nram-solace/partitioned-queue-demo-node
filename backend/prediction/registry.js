@@ -1,6 +1,7 @@
 const PLUGINS = {
   'finance-ema-vwap': require('./plugins/finance-ema-vwap'),
   'retail-fulfillment-ema': require('./plugins/retail-fulfillment-ema'),
+  'airline-ops-ema': require('./plugins/airline-ops-ema'),
 };
 
 function resolvePlugin(profile) {

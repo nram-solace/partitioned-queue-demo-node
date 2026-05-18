@@ -3,7 +3,7 @@
  * solaceUrl = Web Transport to PubSub+ (:8008), NOT the HTTP UI (:3000).
  */
 window.__DEMO_CONFIG__ = {
-  version: '3.3',
+  version: '3.4',
   solaceUrl: null,
   solaceVpn: null,
   solaceUsername: null,

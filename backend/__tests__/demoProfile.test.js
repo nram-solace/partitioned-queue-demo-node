@@ -13,6 +13,8 @@ const {
 
 const financePath = path.join(__dirname, '../../profiles/finance.json');
 const retailPath = path.join(__dirname, '../../profiles/retail.json');
+const airlineCarrierPath = path.join(__dirname, '../../profiles/airline-carrier.json');
+const airlineHubPath = path.join(__dirname, '../../profiles/airline-hub.json');
 
 test('parse and validate profiles/retail.json', () => {
   const p = loadDemoProfile(retailPath);
@@ -31,11 +33,28 @@ test('parse and validate profiles/finance.json', () => {
   assert.equal(getQueueNames(p).partitioned, 'Finance_PQ');
 });
 
-test('listDemoProfiles loads finance and retail with prediction', () => {
+test('parse and validate profiles/airline-carrier.json', () => {
+  const p = loadDemoProfile(airlineCarrierPath);
+  validateDemoProfile(p);
+  assert.equal(p.id, 'airline-carrier');
+  assert.equal(p.features.prediction.plugin, 'airline-ops-ema');
+  assert.equal(p.ui.prediction.valueFormat, 'decimal');
+});
+
+test('parse and validate profiles/airline-hub.json', () => {
+  const p = loadDemoProfile(airlineHubPath);
+  validateDemoProfile(p);
+  assert.equal(p.id, 'airline-hub');
+  assert.equal(p.messaging.partitionKeyField, 'hub');
+});
+
+test('listDemoProfiles loads all packaged profiles with prediction', () => {
   const profiles = listDemoProfiles(path.join(__dirname, '../../profiles'));
-  assert.equal(profiles.length, 2);
-  assert.equal(profiles[0].id, 'finance');
-  assert.equal(profiles[1].id, 'retail');
+  assert.equal(profiles.length, 4);
+  assert.deepEqual(
+    profiles.map((p) => p.id),
+    ['airline-carrier', 'airline-hub', 'finance', 'retail'],
+  );
   for (const p of profiles) {
     assert.ok(p.features.prediction.plugin);
     assert.ok(p.ui.prediction.tabLabel);

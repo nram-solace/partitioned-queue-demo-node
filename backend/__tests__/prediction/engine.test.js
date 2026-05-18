@@ -6,6 +6,8 @@ const { EmaVwapEngine } = require('../../prediction/plugins/finance-ema-vwap/eng
 
 const financePath = path.join(__dirname, '../../../profiles/finance.json');
 const retailPath = path.join(__dirname, '../../../profiles/retail.json');
+const airlineCarrierPath = path.join(__dirname, '../../../profiles/airline-carrier.json');
+const airlineHubPath = path.join(__dirname, '../../../profiles/airline-hub.json');
 
 function meanAbsError(engine, stream) {
   let sum = 0;
@@ -32,8 +34,14 @@ test('PQ engine tracks observations more closely than NQ on scripted stream', ()
 test('packaged profiles register prediction plugins', () => {
   const finance = validateDemoProfile(loadDemoProfile(financePath));
   const retail = validateDemoProfile(loadDemoProfile(retailPath));
+  const airlineCarrier = validateDemoProfile(loadDemoProfile(airlineCarrierPath));
+  const airlineHub = validateDemoProfile(loadDemoProfile(airlineHubPath));
   assert.equal(finance.features.prediction.plugin, 'finance-ema-vwap');
   assert.equal(retail.features.prediction.plugin, 'retail-fulfillment-ema');
+  assert.equal(airlineCarrier.features.prediction.plugin, 'airline-ops-ema');
+  assert.equal(airlineHub.features.prediction.plugin, 'airline-ops-ema');
   assert.ok(finance.ui.prediction.tabLabel);
   assert.ok(retail.ui.prediction.valueLabel);
+  assert.equal(airlineCarrier.ui.prediction.valueFormat, 'decimal');
+  assert.ok(airlineHub.ui.prediction.seriesLabel);
 });

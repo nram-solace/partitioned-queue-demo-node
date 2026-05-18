@@ -14,12 +14,14 @@ This is an **interactive demo** for Solace **PubSub+** queue types.
 
 *Packaged profiles:*
 
-- finance: `profiles/finance.json`
-- retail:  `profiles/retail.json` 
+- finance: `profiles/finance.json` — stock orders; **price** prediction by symbol
+- retail: `profiles/retail.json` — fulfillment orders; **line total** prediction by store
+- airline-carrier: `profiles/airline-carrier.json` — flight status; **delay (minutes)** prediction partitioned by **carrier** (IATA codes)
+- airline-hub: `profiles/airline-hub.json` — same payload shape; **delay** prediction partitioned by **hub** (airport codes)
 
-You can add more domains (airlines, energy, and so on) by copying those samples and staying within the rules enforced in `backend/lib/demoProfile.js`.
+You can add more domains (energy, logistics, and so on) by copying those samples and staying within the rules enforced in `backend/lib/demoProfile.js`.
 
-With **`profiles/finance.json`**, the UI can also show a **Prediction** view: per-symbol charts compare **actual** prices from the publisher with lightweight estimates computed along the **partitioned** and **non-exclusive** paths—so differences in prediction quality echo differences in what each queue type delivers to its consumers. See [Finance profile and the Prediction UI](#finance-profile-and-the-prediction-ui) for behavior and env vars.
+Profiles with **`ui.prediction`** show a **Prediction** tab: charts compare **actual** values from the publisher with lightweight EMA+VWAP estimates on the **partitioned** and **non-exclusive** consumer paths. Finance uses per-symbol **price**; retail uses **line total** by store; airline profiles use **delay (min)** by carrier or hub. See [Finance profile and the Prediction UI](#finance-profile-and-the-prediction-ui) for behavior and env vars.
 
 ![Screenshot](./resources/screenshot-pred.png)
 
@@ -39,7 +41,7 @@ docker compose up -d --build
 
 (`--build` recommended the first time or after changing Node dependencies.)
 
-This starts **`solace-broker`** (PubSub+ Standard), a one-shot **`solace-init`** that provisions **`Demo_PQ`**, **`Demo_NQ`**, and **`Demo_EQ`** with topic **`solace/demo/>`**, the **Node `consumer`** and **`publisher`** containers, and a **`frontend`** service (**nginx** serving the Vite production build on host **`http://localhost:3000`**). Defaults (**finance**, eight partitions) live in **`docker/demo.apps.env`**.
+This starts **`solace-broker`** (PubSub+ Standard), a one-shot **`solace-init`** that provisions **queues and topic subscriptions for every profile** under `profiles/` (e.g. `Finance_PQ` / `Retail_PQ` / `AirlineCarrier_PQ` and matching NQ/EQ), the **Node `consumer`** and **`publisher`** containers, and a **`frontend`** service (**nginx** serving the Vite production build on host **`http://localhost:3000`**). Defaults (**finance**, eight partitions) live in **`docker/demo.apps.env`**.
 
 See **`scripts/setup-solace.sh`** if you need to change Solace resources.
 
@@ -330,7 +332,9 @@ partitioned-queue-demo-node/
 │   └── publisher.js         # Profile-driven publisher + catalog stats topic
 ├── profiles/
 │   ├── finance.json
-│   └── retail.json
+│   ├── retail.json
+│   ├── airline-carrier.json
+│   └── airline-hub.json
 ├── frontend/
 │   ├── src/
 │   │   ├── App.jsx

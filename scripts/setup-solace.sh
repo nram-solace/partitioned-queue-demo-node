@@ -1,8 +1,11 @@
 #!/bin/sh
 # Provision demo queues and topic subscriptions via SEMP v2.
+# New profiles: add profiles/<id>.json and re-run (no script logic changes required).
 # Usage:
-#   ./scripts/setup-solace.sh           # all profiles in profiles/
-#   ./scripts/setup-solace.sh finance   # one profile by id
+#   ./scripts/setup-solace.sh                    # all profiles in profiles/
+#   ./scripts/setup-solace.sh finance            # one profile by id
+#   ./scripts/setup-solace.sh airline-carrier    # airline PQ/NQ/EQ (carrier partition keys)
+#   ./scripts/setup-solace.sh airline-hub        # airline PQ/NQ/EQ (hub partition keys)
 
 set -eu
 
@@ -179,15 +182,23 @@ wait_semp_queues_api
 
 if [ "$#" -eq 0 ]; then
   found=0
+  profile_ids=""
   for f in "$PROFILES_DIR"/*.json; do
     [ -f "$f" ] || continue
     found=1
     provision_profile_file "$f"
+    id=$(jq -r '.id' "$f")
+    if [ -n "$profile_ids" ]; then
+      profile_ids="${profile_ids}, ${id}"
+    else
+      profile_ids="${id}"
+    fi
   done
   if [ "$found" -eq 0 ]; then
     echo "No profile JSON files in ${PROFILES_DIR}" >&2
     exit 1
   fi
+  echo "Provisioned profiles: ${profile_ids}"
 else
   profile_id="$1"
   matched=""

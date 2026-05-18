@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "id": "airline-carrier",
+  "features": {
+    "prediction": {
+      "plugin": "airline-ops-ema",
+      "observationFields": {
+        "seriesKey": "carrier",
+        "value": "delay",
+        "weight": "passengers"
+      }
+    }
+  },
+  "branding": {
+    "appTitle": "Airline operations demo (by carrier)",
+    "subtitle": "Solace PubSub+ queue types",
+    "documentTitle": "Queue demo - airline carrier"
+  },
+  "queues": {
+    "partitioned": "AirlineCarrier_PQ",
+    "nonExclusive": "AirlineCarrier_NQ",
+    "exclusive": "AirlineCarrier_EQ"
+  },
+  "messaging": {
+    "topicPrefix": "solace/demo/airline/ops/carrier",
+    "partitionKeys": ["AA", "DL", "UA", "WN", "B6"],
+    "partitionKeyField": "carrier",
+    "topicSuffixFromField": "carrier"
+  },
+  "labels": {
+    "partitionAssignment": "Carrier"
+  },
+  "messageFields": [
+    { "name": "flightId", "type": "id", "prefix": "FLT-", "width": 8 },
+    { "name": "carrier", "type": "partitionKey" },
+    { "name": "hub", "type": "enum", "values": ["ATL", "ORD", "DFW", "DEN", "LAX"] },
+    { "name": "route", "type": "enum", "values": ["DOM", "SHORT_HAUL", "LONG_HAUL"] },
+    { "name": "status", "type": "enum", "values": ["ON_TIME", "DELAYED", "CANCELLED", "BOARDING"] },
+    { "name": "passengers", "type": "int", "min": 40, "max": 320 },
+    {
+      "name": "delay",
+      "type": "float",
+      "baselineByPartitionKey": {
+        "AA": 12.0,
+        "DL": 9.5,
+        "UA": 14.0,
+        "WN": 6.0,
+        "B6": 11.0
+      },
+      "volatilityByPartitionKey": {
+        "AA": 0.012,
+        "DL": 0.01,
+        "UA": 0.011,
+        "WN": 0.015,
+        "B6": 0.013
+      },
+      "jitter": 3
+    },
+    { "name": "timestamp", "type": "isoTimestamp" },
+    { "name": "gate", "type": "template", "pattern": "G-{n:2}" }
+  ],
+  "ui": {
+    "displayFields": [
+      { "field": "carrier", "label": "Carrier", "format": "text", "prominent": true },
+      { "field": "hub", "label": "Hub", "format": "badge" },
+      { "field": "delay", "label": "Delay", "format": "number" },
+      { "field": "passengers", "label": "Pax", "format": "number" },
+      { "field": "status", "label": "Status", "format": "badge" }
+    ],
+    "prediction": {
+      "tabLabel": "Delay prediction",
+      "seriesLabel": "Carrier",
+      "valueLabel": "Delay (min)",
+      "valueFormat": "decimal",
+      "helpTopic": "flight-delay"
+    },
+    "colorStrategy": "hashPartitionKey"
+  }
+}

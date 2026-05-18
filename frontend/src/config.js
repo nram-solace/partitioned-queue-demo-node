@@ -15,7 +15,7 @@ export const DASHBOARD_VERSION = (() => {
   if (typeof fromRt === 'number' && Number.isFinite(fromRt)) return String(fromRt)
   const env = import.meta.env.VITE_DASHBOARD_VERSION
   if (typeof env === 'string' && env.trim() !== '') return env.trim()
-  return '3.3'
+  return '3.4'
 })()
 
 /** e.g. `v2.1` for the main title line */
