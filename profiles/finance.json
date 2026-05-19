@@ -78,7 +78,7 @@
       { "field": "orderType", "label": "Type", "format": "text" }
     ],
     "prediction": {
-      "tabLabel": "Prediction",
+      "tabLabel": "Price Prediction",
       "seriesLabel": "Symbol",
       "valueLabel": "Price",
       "valueFormat": "currency",

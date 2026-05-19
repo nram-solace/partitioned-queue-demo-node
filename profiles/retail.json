@@ -68,7 +68,7 @@
       { "field": "priority", "label": "Priority", "format": "text" }
     ],
     "prediction": {
-      "tabLabel": "Prediction",
+      "tabLabel": "Line total Prediction",
       "seriesLabel": "Store",
       "valueLabel": "Line total",
       "valueFormat": "currency",
