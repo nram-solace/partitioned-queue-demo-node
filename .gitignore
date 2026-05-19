@@ -60,3 +60,5 @@ package-lock.json
 .claude/**
 private/**
 .dev/**
+demo-cloud.env
+demo-cloud.env

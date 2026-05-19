@@ -51,3 +51,11 @@ test('getSolaceBrowserConfig nulls localhost default for rewrite', () => {
   assert.equal(cfg.solaceVpn, null);
   assert.equal(cfg.nqPredictionConsumer, null);
 });
+
+test('getSolaceBrowserConfig keeps cloud wss SOLACE_HOST when PUBLIC_URL omitted', () => {
+  const cfg = getSolaceBrowserConfig({
+    SOLACE_HOST: 'wss://svc.messaging.solace.cloud:443',
+    SOLACE_VPN: 'my-vpn',
+  });
+  assert.equal(cfg.solaceUrl, 'wss://svc.messaging.solace.cloud:443');
+});

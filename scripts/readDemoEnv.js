@@ -89,7 +89,9 @@ function getSolaceNodeConfig(env = {}) {
 }
 
 /**
- * Values for `window.__DEMO_CONFIG__`. Use `null` for defaults so the UI can apply localhost rewrite.
+ * Values for `window.__DEMO_CONFIG__`.
+ * `solaceUrl: null` only when both Node and browser URLs are the localhost default (VM rewrite).
+ * Cloud `wss://` in SOLACE_HOST must not become null (would rewrite to ws://page-host:8008).
  * @param {Record<string, string>} [env]
  */
 function getSolaceBrowserConfig(env = {}) {
@@ -101,8 +103,15 @@ function getSolaceBrowserConfig(env = {}) {
   const nq = pick(env, 'NQ_PREDICTION_CONSUMER') || DEFAULT_NQ_PREDICTION_CONSUMER;
   const version = pick(env, 'VERSION') || DEFAULT_VERSION;
 
+  let solaceUrl = publicUrl;
+  if (publicUrl === DEFAULT_SOLACE_HOST && host === DEFAULT_SOLACE_HOST) {
+    solaceUrl = null;
+  } else if (publicUrl === DEFAULT_SOLACE_HOST && host !== DEFAULT_SOLACE_HOST) {
+    solaceUrl = host;
+  }
+
   return {
-    solaceUrl: publicUrl === DEFAULT_SOLACE_HOST ? null : publicUrl,
+    solaceUrl,
     solaceVpn: vpn === DEFAULT_SOLACE_VPN ? null : vpn,
     solaceUsername: userName === DEFAULT_SOLACE_USERNAME ? null : userName,
     solacePassword: password === DEFAULT_SOLACE_PASSWORD ? null : password,
