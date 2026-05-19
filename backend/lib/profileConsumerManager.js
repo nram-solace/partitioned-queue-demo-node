@@ -39,16 +39,22 @@ class ProfileConsumerManager {
     return {
       type: 'state',
       profile: slimProfile(this.profile),
-      consumers: this.consumers.map((c) => ({
-        id: c.id,
-        queueName: c.queueName,
-        queueType: c.queueType,
-        consumerNumber: c.consumerNumber,
-        status: c.status,
-        messagesProcessed: c.messagesProcessed,
-        lastOrders: c.lastOrders,
-        assignedPartitionKey: c.assignedPartitionKey,
-      })),
+      consumers: this.consumers.map((c) => {
+        const elapsed = (Date.now() - c.startTime) / 1000;
+        const rate =
+          elapsed > 0 ? parseFloat((c.messagesProcessed / elapsed).toFixed(2)) : 0;
+        return {
+          id: c.id,
+          queueName: c.queueName,
+          queueType: c.queueType,
+          consumerNumber: c.consumerNumber,
+          status: c.status,
+          messagesProcessed: c.messagesProcessed,
+          rate,
+          lastOrders: c.lastOrders,
+          assignedPartitionKey: c.assignedPartitionKey,
+        };
+      }),
       partitionState: this.partitionState,
       partitionedState: this.partitionedState,
       nonExclusiveState: this.nonExclusiveState,

@@ -6,7 +6,7 @@ const { commandWildcard } = require('./commandTopics');
 const { slimProfile, attachJsonPayload, parseJsonAttachment } = require('./catalogPayload');
 
 const DEFAULT_SEND_BUFFER_MAX_SIZE = 4 * 1024 * 1024; // 4 MiB (API default is 64 KiB)
-const DEFAULT_CATALOG_EVENT_MIN_INTERVAL_MS = 50; // per profile, order/prediction only
+const DEFAULT_CATALOG_EVENT_MIN_INTERVAL_MS = 50; // per profile, prediction only
 const DROP_LOG_INTERVAL_MS = 10_000;
 
 function parsePositiveInt(raw, fallback) {
@@ -37,7 +37,9 @@ function isInsufficientSpace(error) {
 /** High-frequency catalog events (many queue consumers → one session). */
 function isThrottledCatalogEvent(payload) {
   const t = payload && payload.type;
-  return t === 'order' || t === 'prediction';
+  // Order events must not be throttled: PQ consumers emit prediction then order
+  // synchronously, and a shared per-profile throttle would drop every order update.
+  return t === 'prediction';
 }
 
 /**
