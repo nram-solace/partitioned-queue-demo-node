@@ -251,7 +251,10 @@ function ConsumerTile({ consumer, queueType, consumerNumber, onDisconnect, onRec
       </div>
 
       <div className="pt-3 border-t border-slate-700 space-y-1 text-xs">
-        <div className="flex justify-between">
+        <div
+          className="flex justify-between"
+          title="Messages processed since this dashboard connected"
+        >
           <span className="text-slate-500">📊 Processed:</span>
           <span className="font-semibold">{consumer.messagesProcessed.toLocaleString()}</span>
         </div>

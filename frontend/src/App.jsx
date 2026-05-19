@@ -78,6 +78,24 @@ function publisherCountsRegressed(publishedCountBySymbol, baseline) {
   )
 }
 
+/** Per-consumer processed count since dashboard session start (baseline on first sighting). */
+function sessionConsumerProcessed(consumerId, globalCount, baselines) {
+  if (consumerId == null) {
+    return typeof globalCount === 'number' ? globalCount : 0
+  }
+  const global = typeof globalCount === 'number' ? globalCount : 0
+  const key = String(consumerId)
+  if (baselines[key] === undefined) {
+    baselines[key] = global
+    return 0
+  }
+  if (global < baselines[key]) {
+    baselines[key] = global
+    return 0
+  }
+  return global - baselines[key]
+}
+
 function App() {
   /** New id each full page load so reload does not reuse a prior dashboard session. */
   const sessionId = useMemo(() => createSessionId(), [])
@@ -108,6 +126,7 @@ function App() {
   const lastRollingPublisherCountRef = useRef(-1)
   const publishedTotalBaselineRef = useRef(null)
   const publishedCountBaselineRef = useRef(null)
+  const consumerProcessedBaselineRef = useRef({})
   const latestActualRef = useRef({})
   const lastPublisherStatsAtRef = useRef(0)
   const selectedProfileIdRef = useRef(selectedProfileId)
@@ -222,10 +241,15 @@ function App() {
 
       const index = data.consumerNumber - 1
       if (newConsumers[queueKey][index]) {
+        const sessionProcessed = sessionConsumerProcessed(
+          data.consumerId,
+          data.stats.messagesProcessed,
+          consumerProcessedBaselineRef.current,
+        )
         newConsumers[queueKey][index] = {
           ...newConsumers[queueKey][index],
           status: data.stats.status,
-          messagesProcessed: data.stats.messagesProcessed,
+          messagesProcessed: sessionProcessed,
           rate: data.stats.rate,
           lastOrders: data.lastOrders || [],
           ...(data.queueName != null && data.queueName !== '' ? { queueName: data.queueName } : {}),
@@ -274,9 +298,15 @@ function App() {
         const index = consumer.consumerNumber - 1
         if (newConsumers[queueKey][index]) {
           const { assignedSymbol, ...rest } = consumer
+          const sessionProcessed = sessionConsumerProcessed(
+            consumer.id,
+            consumer.messagesProcessed,
+            consumerProcessedBaselineRef.current,
+          )
           newConsumers[queueKey][index] = {
             ...newConsumers[queueKey][index],
             ...rest,
+            messagesProcessed: sessionProcessed,
             assignedPartitionKey:
               rest.assignedPartitionKey ??
               assignedSymbol ??
@@ -291,6 +321,7 @@ function App() {
   const resetSessionBaselines = useCallback(() => {
     publishedTotalBaselineRef.current = null
     publishedCountBaselineRef.current = null
+    consumerProcessedBaselineRef.current = {}
     setSessionPublishedCount(0)
     setSessionPublishedCountBySymbol({})
   }, [])
