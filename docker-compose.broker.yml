@@ -1,3 +1,45 @@
-# Deprecated: in-network SOLACE_HOST / SEMP overrides live in docker-compose.yml.
-# Use: docker compose up -d --build
-# (Keeping this file avoids breaking bookmarks that pass -f docker-compose.broker.yml)
+# Merged via COMPOSE_FILE (see compose.env.example). Sets in-network URLs for the bundled broker.
+# Cannot live in docker-compose.yml: extending included services fails on some Compose versions
+# ("services.frontend conflicts with imported resource").
+
+services:
+  solace-init:
+    environment:
+      SEMP_HOST: solace-broker
+      MSG_VPN: default
+      SEMP_SCHEME: http
+      SEMP_PORT: 8080
+      SEMP_USER: admin
+      SEMP_PASS: admin
+
+  consumer:
+    depends_on:
+      solace-broker:
+        condition: service_healthy
+        required: false
+      solace-init:
+        condition: service_completed_successfully
+        required: false
+    environment:
+      SOLACE_HOST: ws://solace-broker:8008
+      SOLACE_VPN: default
+      SOLACE_USERNAME: default
+      SOLACE_PASSWORD: default
+
+  publisher:
+    depends_on:
+      solace-broker:
+        condition: service_healthy
+        required: false
+      solace-init:
+        condition: service_completed_successfully
+        required: false
+    environment:
+      SOLACE_HOST: ws://solace-broker:8008
+      SOLACE_VPN: default
+      SOLACE_USERNAME: default
+      SOLACE_PASSWORD: default
+
+  frontend:
+    environment:
+      SOLACE_PUBLIC_URL: ${SOLACE_PUBLIC_URL:-ws://localhost:8008}

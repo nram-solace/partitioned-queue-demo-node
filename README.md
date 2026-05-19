@@ -158,7 +158,7 @@ PUBLISH_RATE=10
 NQ_PREDICTION_CONSUMER=1
 ```
 
-**Docker Compose** uses the same **`demo.env`** file. The default **`docker compose up`** enables the bundled broker (`cp compose.env.example .env`); **`docker-compose.yml`** sets **`SOLACE_HOST=ws://solace-broker:8008`** for Node containers. For an external broker use **`docker compose -f docker-compose.minimal.yml`**. Set **`SOLACE_PUBLIC_URL`** in **`demo.env`** for remote browsers (e.g. `ws://<VM-IP>:8008`).
+**Docker Compose** uses the same **`demo.env`** file. The default **`docker compose up`** enables the bundled broker (`cp compose.env.example .env`); **`docker-compose.broker.yml`** sets **`SOLACE_HOST=ws://solace-broker:8008`** for Node containers. For an external broker use **`docker compose -f docker-compose.minimal.yml`**. Set **`SOLACE_PUBLIC_URL`** in **`demo.env`** for remote browsers (e.g. `ws://<VM-IP>:8008`).
 
 **Topic subscriptions on the broker** must cover traffic your profiles publish. With **Docker**, **`solace-init`** provisions queues and **`solace/demo/>`** (or profile-specific prefixes). On a **broker you manage yourself**, subscribe each queue to **`{messaging.topicPrefix}/>`** from the profile JSON (or a broader wildcard such as **`solace/demo/>`**).
 
@@ -390,7 +390,7 @@ partitioned-queue-demo-node/
 | `PROFILES_DIR` | Profile JSON directory | `./profiles` |
 | `MSG_VPN` / `SEMP_PORT` / `SEMP_WAIT_*` | Broker provisioning (`solace-init`, `setup-solace.sh`) | see `demo.env.example` |
 
-**Docker Compose** — all app services use **`env_file: demo.env`** (optional if missing). Full stack **`docker-compose.yml`** overrides in-network **`SOLACE_HOST`**; minimal compose uses **`demo.env`** only. Regenerate browser config: **`npm run sync-config`** (host) or recreate **`demo-frontend`** (container entrypoint). See **[docs/README-Docker.md](docs/README-Docker.md)**.
+**Docker Compose** — all app services use **`env_file: demo.env`** (optional if missing). Full stack merges **`docker-compose.broker.yml`** for in-network **`SOLACE_HOST`**; minimal compose uses **`demo.env`** only. Regenerate browser config: **`npm run sync-config`** (host) or recreate **`demo-frontend`** (container entrypoint). See **[docs/README-Docker.md](docs/README-Docker.md)**.
 
 **Frontend** — **`frontend/public/config.js`** is generated from **`demo.env`**; do not edit by hand. **`VITE_SOLACE_*`** remains an emergency fallback only.
 
