@@ -121,10 +121,10 @@ export const MIN_SAMPLES_FOR_CLOSENESS_METRIC = 1
 export const CHART_ACCURACY_GAP_WINDOW = 24
 
 /**
- * Mean chart |Δ|% is mapped to 0–100% for **both** PQ and NQ with this same cap: `100 * (1 - meanGap / cap)`.
- * One scale avoids NQ looking “more accurate” than PQ when its mean error is actually larger (old NQ cap was looser).
+ * Mean |Δ|% is mapped to closeness 0–100 via `100 * (1 - meanGap / cap)`.
+ * High cap avoids NA / stuck bars when NQ mean error is large; PQ still reads higher % than NQ on the same scale.
  */
-export const CHART_ACCURACY_SHARED_MAX_GAP_PERCENT = 5
+export const CHART_ACCURACY_SHARED_MAX_GAP_PERCENT = 100
 
 /** 0–100 closeness from mean gap (% of price) using the given scale cap. */
 export function closenessPctFromMeanGap(meanGapPct, capPercent = CHART_ACCURACY_SHARED_MAX_GAP_PERCENT) {

@@ -72,7 +72,6 @@
       "seriesLabel": "Carrier",
       "valueLabel": "Delay (min)",
       "valueFormat": "decimal",
-      "accuracyMaxGapPercent": 12,
       "helpTopic": "flight-delay"
     },
     "colorStrategy": "hashPartitionKey"

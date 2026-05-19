@@ -76,28 +76,17 @@ function PredictionChannelRow({
       : 0
 
   const cap = scaleMaxGapPercent
-  /** NA only when mean gap is at/above this row’s scale max (then closeness is 0 and bar is empty). */
-  const atClosenessScaleFloor =
-    !insufficientSamples &&
-    meanGapPct != null &&
-    Number.isFinite(meanGapPct) &&
-    meanGapPct >= cap - 1e-9
-
   const closenessLabel =
     insufficientSamples
       ? '—'
       : closenessPct == null || !Number.isFinite(closenessPct)
         ? '—'
-        : atClosenessScaleFloor
-          ? 'NA'
-          : `${closenessPct.toFixed(0)}%`
+        : `${closenessPct.toFixed(0)}%`
 
   const barTitle = insufficientSamples
     ? `${label}: ${sampleCount}/${minSamples} prediction samples — bar appears once enough ${label} updates have been recorded.`
     : meanGapPct != null && Number.isFinite(meanGapPct)
-      ? atClosenessScaleFloor
-        ? `Mean |Δ| over recent ${label} predictions: ${meanGapPct.toFixed(2)}% of observed value (≥ ${cap}% scale max). NA means off-scale, not “zero match.” Last ${sampleCount} sample(s), max ${CHART_ACCURACY_GAP_WINDOW}.`
-        : `Mean |Δ| over recent ${label} predictions: ${meanGapPct.toFixed(2)}% of observed value. Closeness ${Math.round(barW)}% — 100 ≈ avg gap ~0; at or above ${cap}% mean gap we show NA instead of 0%. Last ${sampleCount} sample(s), max ${CHART_ACCURACY_GAP_WINDOW}.`
+      ? `Mean |Δ| over recent ${label} predictions: ${meanGapPct.toFixed(2)}% of observed value. Closeness ${Math.round(barW)}% (100 ≈ avg gap ~0; 0% when mean gap ≥ ${cap}%). Last ${sampleCount} sample(s), max ${CHART_ACCURACY_GAP_WINDOW}.`
       : `No ${label} prediction samples recorded yet.`
 
   return (
@@ -145,17 +134,9 @@ function PredictionChannelRow({
           role="progressbar"
           aria-valuemin={0}
           aria-valuemax={100}
-          aria-valuenow={atClosenessScaleFloor ? 0 : Math.round(barW)}
-          aria-valuetext={
-            atClosenessScaleFloor
-              ? `${label} closeness not on 0 to 100 scale, mean chart gap ${meanGapPct != null && Number.isFinite(meanGapPct) ? `${meanGapPct.toFixed(2)} percent` : 'unknown'}`
-              : `${label} closeness ${Math.round(barW)} percent, mean chart gap ${meanGapPct != null && Number.isFinite(meanGapPct) ? `${meanGapPct.toFixed(2)} percent` : 'unknown'}`
-          }
-          aria-label={
-            atClosenessScaleFloor
-              ? `${label} closeness not on scale, mean chart gap ${meanGapPct != null && Number.isFinite(meanGapPct) ? `${meanGapPct.toFixed(2)} percent` : 'unknown'}`
-              : `${label} closeness ${Math.round(barW)} percent, mean chart gap ${meanGapPct != null && Number.isFinite(meanGapPct) ? `${meanGapPct.toFixed(2)} percent` : 'unknown'}`
-          }
+          aria-valuenow={Math.round(barW)}
+          aria-valuetext={`${label} closeness ${Math.round(barW)} percent, mean chart gap ${meanGapPct != null && Number.isFinite(meanGapPct) ? `${meanGapPct.toFixed(2)} percent` : 'unknown'}`}
+          aria-label={`${label} closeness ${Math.round(barW)} percent, mean chart gap ${meanGapPct != null && Number.isFinite(meanGapPct) ? `${meanGapPct.toFixed(2)} percent` : 'unknown'}`}
         >
           <div
             className={`h-full rounded-full transition-[width] duration-300 ease-out ${barColorClass}`}
@@ -417,10 +398,10 @@ export default function PredictionView({
               mean gap over that short window, so they can disagree with what the eye sees on the far right of the line.
               Closeness % stays <strong>—</strong> until at least <strong>{MIN_SAMPLES_FOR_CLOSENESS_METRIC}</strong>{' '}
               overlapping points so a tiny slice of the tape does not dominate. Map 0–100 so{' '}
-              <strong>100 ≈ average gap ~0</strong>. <strong>PQ and NQ share one mean-gap cap</strong> (
+              <strong>100 ≈ average gap ~0</strong>.               <strong>PQ and NQ share one mean-gap cap</strong> (
               <strong>{helpAccuracyCap}%</strong>) so higher % means lower average error on that
-              channel — comparable across rows. When the mean reaches or passes that cap we show <strong>NA</strong>{' '}
-              instead of “0%” so it is not read as “zero accuracy.” Hover the bar or μ≈ for the numeric mean.
+              channel — comparable across rows. At or above the cap, closeness shows <strong>0%</strong> (empty bar).
+              Hover the bar or μ≈ for the numeric mean.
             </p>
           </div>
         </div>

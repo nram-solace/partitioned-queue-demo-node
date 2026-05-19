@@ -26,7 +26,6 @@ test('airline-carrier plugin resolves and validates observation fields', () => {
   assert.equal(obs.seriesKey, 'carrier');
   assert.equal(obs.value, 'delay');
   assert.equal(obs.weight, 'passengers');
-  assert.equal(profile.ui.prediction.accuracyMaxGapPercent, 12);
 });
 
 test('airline-hub plugin resolves and validates observation fields', () => {
@@ -37,7 +36,6 @@ test('airline-hub plugin resolves and validates observation fields', () => {
   assert.equal(obs.seriesKey, 'hub');
   assert.equal(obs.value, 'delay');
   assert.equal(obs.weight, 'passengers');
-  assert.equal(profile.ui.prediction.accuracyMaxGapPercent, 12);
 });
 
 test('airline profiles use hub or carrier as seriesKey matching partitionKeyField', () => {

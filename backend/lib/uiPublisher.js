@@ -42,6 +42,13 @@ function isThrottledCatalogEvent(payload) {
   return t === 'prediction';
 }
 
+/** One throttle bucket per profile + queue type + series so PQ bursts do not starve NQ. */
+function predictionThrottleKey(profileId, payload) {
+  const queueType = payload?.queueType || '?';
+  const seriesKey = payload?.seriesKey != null ? String(payload.seriesKey) : '?';
+  return `${profileId}:${queueType}:${seriesKey}`;
+}
+
 /**
  * Solace session for dashboard catalog/events publish and solace/command subscribe.
  */
@@ -106,10 +113,11 @@ class CatalogUiSession {
 
   _shouldThrottle(profileId, payload) {
     if (!isThrottledCatalogEvent(payload)) return false;
+    const bucket = predictionThrottleKey(profileId, payload);
     const now = Date.now();
-    const last = this._lastHighFreqPublishAt.get(profileId) || 0;
+    const last = this._lastHighFreqPublishAt.get(bucket) || 0;
     if (now - last < this.eventMinIntervalMs) return true;
-    this._lastHighFreqPublishAt.set(profileId, now);
+    this._lastHighFreqPublishAt.set(bucket, now);
     return false;
   }
 
@@ -185,4 +193,9 @@ class CatalogUiSession {
   }
 }
 
-module.exports = { CatalogUiSession, isInsufficientSpace, isThrottledCatalogEvent };
+module.exports = {
+  CatalogUiSession,
+  isInsufficientSpace,
+  isThrottledCatalogEvent,
+  predictionThrottleKey,
+};

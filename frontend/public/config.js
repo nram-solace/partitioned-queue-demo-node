@@ -4,7 +4,7 @@
  * See: .dev/pm/impl-central-config.md
  */
 window.__DEMO_CONFIG__ = {
-  version: "3.9.0",
+  version: "3.10.0",
   solaceUrl: null,
   solaceVpn: null,
   solaceUsername: null,
