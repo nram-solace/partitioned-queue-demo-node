@@ -114,7 +114,8 @@ export const CUMULATIVE_CLOSENESS_SCALE_MAX_GAP_PERCENT = CUMULATIVE_CLOSENESS_S
  * are present before showing the accuracy bar. Kept small so the bar appears quickly; the rolling window below
  * avoids a misleading reading from only 1–2 ticks.
  */
-export const MIN_SAMPLES_FOR_CLOSENESS_METRIC = 2
+/** At least one prediction sample per channel before showing the accuracy bar. */
+export const MIN_SAMPLES_FOR_CLOSENESS_METRIC = 1
 
 /** How many recent valid (actual + prediction) chart samples feed the mean |Δ| for the bar (≈ seconds at 1 Hz). */
 export const CHART_ACCURACY_GAP_WINDOW = 24

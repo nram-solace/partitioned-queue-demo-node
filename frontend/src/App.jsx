@@ -3,7 +3,7 @@ import QueuePanel from './components/QueuePanel'
 import Header from './components/Header'
 import PublisherStatus from './components/PublisherStatus'
 import PredictionView from './components/PredictionView'
-import { NQ_PREDICTION_CONSUMER } from './config'
+import { CHART_ACCURACY_GAP_WINDOW, NQ_PREDICTION_CONSUMER } from './config'
 import { useSolaceDashboard } from './hooks/useSolaceDashboard'
 import { createSessionId } from './sessionId'
 import { deriveQueueNamesFromConsumers, handleDashboardMessage } from './dashboardMessages'
@@ -122,11 +122,10 @@ function App() {
   const [latestActual, setLatestActual] = useState({})
   const [latestPredictions, setLatestPredictions] = useState({})
   const [priceHistory, setPriceHistory] = useState({})
+  /** Per series: rolling |Δ|% samples per channel, one entry per prediction message. */
+  const [accuracyGapSamplesBySeries, setAccuracyGapSamplesBySeries] = useState({})
   const predictionsRef = useRef({})
-  /** Per series/channel: incremented on each prediction WS message. */
-  const predVersionRef = useRef({})
-  /** Versions snapshotted into chart history on the previous publisher tick. */
-  const lastSnapPredVersionRef = useRef({})
+  const accuracyGapHistoryRef = useRef({})
   const lastRollingPublisherCountRef = useRef(-1)
   const publishedTotalBaselineRef = useRef(null)
   const publishedCountBaselineRef = useRef(null)
@@ -218,15 +217,12 @@ function App() {
         const next = { ...prev }
         Object.entries(data.actuals).forEach(([seriesKey, actual]) => {
           const preds = predictionsRef.current[seriesKey] || {}
-          const vers = predVersionRef.current[seriesKey] || { pq: 0, nq: 0 }
-          const snap = lastSnapPredVersionRef.current[seriesKey] || { pq: 0, nq: 0 }
           const point = {
             time: timestamp,
             actual,
-            pq: vers.pq > snap.pq && preds.pq != null ? preds.pq : null,
-            nq: vers.nq > snap.nq && preds.nq != null ? preds.nq : null,
+            pq: preds.pq ?? null,
+            nq: preds.nq ?? null,
           }
-          lastSnapPredVersionRef.current[seriesKey] = { pq: vers.pq, nq: vers.nq }
           const history = [...(next[seriesKey] || []), point]
           if (history.length > HISTORY_LIMIT) history.shift()
           next[seriesKey] = history
@@ -333,10 +329,29 @@ function App() {
     setSessionPublishedCountBySymbol({})
   }, [])
 
+  const recordPredictionAccuracyGap = useCallback((seriesKey, channel, predicted, observed) => {
+    if (!(observed > 0) || predicted == null || !Number.isFinite(predicted)) return
+    const gapPct = Math.abs((predicted - observed) / observed) * 100
+    const key = String(seriesKey)
+    if (!accuracyGapHistoryRef.current[key]) {
+      accuracyGapHistoryRef.current[key] = { pq: [], nq: [] }
+    }
+    const slot = accuracyGapHistoryRef.current[key][channel]
+    slot.push(gapPct)
+    if (slot.length > CHART_ACCURACY_GAP_WINDOW) slot.shift()
+    setAccuracyGapSamplesBySeries((prev) => ({
+      ...prev,
+      [key]: {
+        pq: [...accuracyGapHistoryRef.current[key].pq],
+        nq: [...accuracyGapHistoryRef.current[key].nq],
+      },
+    }))
+  }, [])
+
   const resetPredictionState = useCallback(() => {
     predictionsRef.current = {}
-    predVersionRef.current = {}
-    lastSnapPredVersionRef.current = {}
+    accuracyGapHistoryRef.current = {}
+    setAccuracyGapSamplesBySeries({})
     latestActualRef.current = {}
     lastPublisherStatsAtRef.current = 0
     lastRollingPublisherCountRef.current = -1
@@ -407,8 +422,11 @@ function App() {
           const key = String(seriesKey)
           if (!predictionsRef.current[key]) predictionsRef.current[key] = {}
           predictionsRef.current[key][field] = predicted
-          if (!predVersionRef.current[key]) predVersionRef.current[key] = { pq: 0, nq: 0 }
-          predVersionRef.current[key][field] += 1
+          const observed =
+            typeof msg.observed === 'number' && Number.isFinite(msg.observed) && msg.observed > 0
+              ? msg.observed
+              : latestActualRef.current[key]
+          recordPredictionAccuracyGap(key, field, predicted, observed)
           setLatestPredictions((prev) => ({
             ...prev,
             [key]: { ...prev[key], [field]: predicted },
@@ -446,6 +464,7 @@ function App() {
       sessionId,
       applyProfileEntry,
       applyPublisherStatsPayload,
+      recordPredictionAccuracyGap,
       updateConsumer,
       updateConsumerStatus,
       updateConsumersFromState,
@@ -590,6 +609,7 @@ function App() {
           latestActuals={latestActual}
           latestPredictions={latestPredictions}
           publishedCountBySeries={sessionPublishedCountBySymbol}
+          accuracyGapSamplesBySeries={accuracyGapSamplesBySeries}
         />
       )}
     </div>
