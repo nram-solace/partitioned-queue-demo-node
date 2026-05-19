@@ -5,7 +5,7 @@ import PublisherStatus from './components/PublisherStatus'
 import PredictionView from './components/PredictionView'
 import { NQ_PREDICTION_CONSUMER } from './config'
 import { useSolaceDashboard } from './hooks/useSolaceDashboard'
-import { getOrCreateSessionId } from './sessionId'
+import { createSessionId } from './sessionId'
 import { deriveQueueNamesFromConsumers, handleDashboardMessage } from './dashboardMessages'
 
 const CANONICAL_NQ_CONSUMER = NQ_PREDICTION_CONSUMER
@@ -79,7 +79,8 @@ function publisherCountsRegressed(publishedCountBySymbol, baseline) {
 }
 
 function App() {
-  const sessionId = useMemo(() => getOrCreateSessionId(), [])
+  /** New id each full page load so reload does not reuse a prior dashboard session. */
+  const sessionId = useMemo(() => createSessionId(), [])
   const [profileCatalog, setProfileCatalog] = useState(null)
   const [selectedProfileId, setSelectedProfileId] = useState(null)
   const [profile, setProfile] = useState(null)
@@ -129,6 +130,11 @@ function App() {
   }, [])
 
   const applyPublisherStatsPayload = useCallback((data) => {
+    // Only live stats from solace/catalog/stats/{profile}/publisher — not snapshot.publisherStats (always zeros).
+    if (data?.type !== 'publisherStats') {
+      return
+    }
+
     lastPublisherStatsAtRef.current = Date.now()
 
     const publisherRestarted =
@@ -380,7 +386,6 @@ function App() {
           if (msg.partitionedState) setPartitionedState(msg.partitionedState)
           if (msg.nonExclusiveState) setNonExclusiveState(msg.nonExclusiveState)
           if (msg.exclusiveState) setExclusiveState(msg.exclusiveState)
-          if (msg.publisherStats) applyPublisherStatsPayload(msg.publisherStats)
         },
         onPublisherStats: applyPublisherStatsPayload,
         onPartitionState: setPartitionState,
