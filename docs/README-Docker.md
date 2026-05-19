@@ -504,6 +504,15 @@ Use **`docker-compose.minimal.yml`** and follow **[Remote broker: queues and sub
 
 Symptom: dashboard loads but header stays **Disconnected** → wrong **`SOLACE_PUBLIC_URL`**, client ACLs, or VPN/credentials. Symptom: connected but no tiles/messages → queues missing or topic subscriptions do not cover the profile **`topicPrefix`**.
 
+### Blank page on `http://<VM-IP>:3000` (`crypto.randomUUID is not a function`)
+
+Browsers only expose **`crypto.randomUUID`** in a **secure context** (HTTPS or localhost). Over plain **HTTP** to a remote IP, the dashboard used to crash on load. The app now falls back to **`crypto.getRandomValues`** for session IDs. Rebuild and recreate the frontend after pulling the fix:
+
+```bash
+docker compose build frontend
+docker compose up -d --force-recreate frontend
+```
+
 Use **`docker compose`** (space), not **`docker-compose`** v1 — v1 can fail with `KeyError: 'ContainerConfig'` on recreate.
 
 ---
