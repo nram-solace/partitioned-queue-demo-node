@@ -8,6 +8,7 @@ const {
   mergeDemoEnv,
   getSolaceNodeConfig,
   getSolaceBrowserConfig,
+  DOCKER_BUNDLED_BROKER_URL,
 } = require('../../scripts/readDemoEnv');
 
 test('readDemoEnv parses comments and quoted values', () => {
@@ -35,6 +36,33 @@ test('getSolaceNodeConfig applies defaults', () => {
   const cfg = getSolaceNodeConfig({});
   assert.equal(cfg.url, 'ws://localhost:8008');
   assert.equal(cfg.vpnName, 'default');
+});
+
+test('getSolaceNodeConfig rewrites localhost to bundled broker in Docker', () => {
+  const prev = process.env.RUNNING_IN_DOCKER;
+  process.env.RUNNING_IN_DOCKER = '1';
+  try {
+    const cfg = getSolaceNodeConfig({ SOLACE_HOST: 'ws://localhost:8008' });
+    assert.equal(cfg.url, DOCKER_BUNDLED_BROKER_URL);
+  } finally {
+    if (prev === undefined) delete process.env.RUNNING_IN_DOCKER;
+    else process.env.RUNNING_IN_DOCKER = prev;
+  }
+});
+
+test('getSolaceNodeConfig prefers SOLACE_DOCKER_BROKER_HOST in Docker', () => {
+  const prev = process.env.RUNNING_IN_DOCKER;
+  process.env.RUNNING_IN_DOCKER = '1';
+  try {
+    const cfg = getSolaceNodeConfig({
+      SOLACE_HOST: 'ws://localhost:8008',
+      SOLACE_DOCKER_BROKER_HOST: 'ws://custom-broker:8008',
+    });
+    assert.equal(cfg.url, 'ws://custom-broker:8008');
+  } finally {
+    if (prev === undefined) delete process.env.RUNNING_IN_DOCKER;
+    else process.env.RUNNING_IN_DOCKER = prev;
+  }
 });
 
 test('getSolaceBrowserConfig uses SOLACE_PUBLIC_URL over SOLACE_HOST', () => {

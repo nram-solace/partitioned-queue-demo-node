@@ -1,6 +1,10 @@
 const path = require('path');
 const dotenv = require('dotenv');
-const { getSolaceNodeConfig } = require('../../scripts/readDemoEnv');
+const {
+  getSolaceNodeConfig,
+  DOCKER_BUNDLED_BROKER_URL,
+  DEFAULT_SOLACE_HOST,
+} = require('../../scripts/readDemoEnv');
 
 let loaded = false;
 
@@ -8,6 +12,11 @@ function loadDemoEnv() {
   if (loaded) return;
   dotenv.config({ path: path.resolve(__dirname, '..', '..', 'demo.env') });
   loaded = true;
+}
+
+function pick(env, key) {
+  const v = env[key];
+  return typeof v === 'string' && v.trim() !== '' ? v.trim() : undefined;
 }
 
 /**
@@ -32,25 +41,15 @@ function formatSolaceConnectTarget() {
   return `${userName}@${url} vpn=${vpnName}`;
 }
 
-/** Warn when compose broker overrides were not applied (localhost ≠ broker container). */
-function warnIfDockerLocalhostBrokerUrl() {
+/** Log how the container resolved its broker URL (once at startup). */
+function logDockerBrokerUrlResolution() {
   if (process.env.RUNNING_IN_DOCKER !== '1') return;
   loadDemoEnv();
+  const configured = pick(process.env, 'SOLACE_HOST') || DEFAULT_SOLACE_HOST;
   const { url } = getSolaceNodeConfig(process.env);
-  if (!/localhost|127\.0\.0\.1/.test(url)) return;
-  console.error(
-    '❌ SOLACE_HOST is',
-    url,
-    'inside a container — that points at this container, not solace-broker.',
-  );
-  console.error(
-    '   Fix: git pull, rebuild, and recreate from repo root:',
-  );
-  console.error(
-    '   docker compose up -d --build --force-recreate consumer publisher',
-  );
-  console.error(
-    '   Expected SOLACE_HOST in container: ws://solace-broker:8008 (see docker compose config).',
+  if (url === configured) return;
+  console.log(
+    `ℹ️  Node broker URL: ${url} (demo.env SOLACE_HOST=${configured} is for the host; bundled broker in Docker)`,
   );
 }
 
@@ -58,5 +57,6 @@ module.exports = {
   loadDemoEnv,
   getSolaceSessionProps,
   formatSolaceConnectTarget,
-  warnIfDockerLocalhostBrokerUrl,
+  logDockerBrokerUrlResolution,
+  DOCKER_BUNDLED_BROKER_URL,
 };

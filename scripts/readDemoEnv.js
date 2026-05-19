@@ -2,6 +2,8 @@ const fs = require('fs');
 const path = require('path');
 
 const DEFAULT_SOLACE_HOST = 'ws://localhost:8008';
+/** In-network Web Transport when Node runs in Compose with the bundled broker. */
+const DOCKER_BUNDLED_BROKER_URL = 'ws://solace-broker:8008';
 const DEFAULT_SOLACE_VPN = 'default';
 const DEFAULT_SOLACE_USERNAME = 'default';
 const DEFAULT_SOLACE_PASSWORD = 'default';
@@ -77,11 +79,27 @@ function pick(env, key) {
 }
 
 /**
+ * Node messaging URL. In Docker, demo.env often has localhost (correct on the host);
+ * rewrite to the bundled broker service unless SOLACE_DOCKER_BROKER_HOST or a non-localhost URL is set.
+ * @param {Record<string, string>} [env]
+ */
+function resolveSolaceHost(env = {}) {
+  const dockerUrl = pick(env, 'SOLACE_DOCKER_BROKER_HOST');
+  if (dockerUrl) return dockerUrl;
+
+  const host = pick(env, 'SOLACE_HOST') || DEFAULT_SOLACE_HOST;
+  if (process.env.RUNNING_IN_DOCKER !== '1') return host;
+  if (pick(env, 'SOLACE_ALLOW_CONTAINER_LOCALHOST') === '1') return host;
+  if (/localhost|127\.0\.0\.1/.test(host)) return DOCKER_BUNDLED_BROKER_URL;
+  return host;
+}
+
+/**
  * @param {Record<string, string>} [env]
  */
 function getSolaceNodeConfig(env = {}) {
   return {
-    url: pick(env, 'SOLACE_HOST') || DEFAULT_SOLACE_HOST,
+    url: resolveSolaceHost(env),
     vpnName: pick(env, 'SOLACE_VPN') || DEFAULT_SOLACE_VPN,
     userName: pick(env, 'SOLACE_USERNAME') || DEFAULT_SOLACE_USERNAME,
     password: pick(env, 'SOLACE_PASSWORD') || DEFAULT_SOLACE_PASSWORD,
@@ -127,6 +145,7 @@ function defaultDemoEnvPath() {
 module.exports = {
   ENV_KEYS,
   DEFAULT_SOLACE_HOST,
+  DOCKER_BUNDLED_BROKER_URL,
   DEFAULT_SOLACE_VPN,
   DEFAULT_SOLACE_USERNAME,
   DEFAULT_SOLACE_PASSWORD,
@@ -135,6 +154,7 @@ module.exports = {
   DEFAULT_VERSION,
   readDemoEnv,
   mergeDemoEnv,
+  resolveSolaceHost,
   getSolaceNodeConfig,
   getSolaceBrowserConfig,
   defaultDemoEnvPath,

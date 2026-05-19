@@ -558,23 +558,29 @@ Full mapping to `window.__DEMO_CONFIG__`: [`.dev/pm/impl-central-config.md`](../
 
 **Symptom:** Browser shows **Connected**; `demo-consumer` / `demo-publisher` log `Connection error` and restart; broker events show only **`dashboard-*`** clients.
 
-**Cause:** Node containers were using **`ws://localhost:8008`** (localhost inside a container is not the broker). The bundled-broker merge file was not loaded — **`.env`** must include **`COMPOSE_FILE=docker-compose.yml:docker-compose.broker.yml`** (see **`compose.env.example`**).
+**Cause:** **`demo.env`** sets **`SOLACE_HOST=ws://localhost:8008`** (correct on the VM host, wrong inside a container). Compose may also fail to merge **`docker-compose.broker.yml`** if **`.env`** lacks **`COMPOSE_FILE`**.
 
 **Fix (on the VM):**
 
 ```bash
 cd /opt/queue-demo
 git pull
-cp compose.env.example .env    # sets COMPOSE_PROFILES and COMPOSE_FILE
-sudo docker compose config | grep 'SOLACE_HOST: ws://solace-broker'
+cp compose.env.example .env    # COMPOSE_FILE + SOLACE_DOCKER_BROKER_HOST
 sudo docker compose up -d --build --force-recreate consumer publisher
-sudo docker exec demo-consumer printenv SOLACE_HOST
-# must print: ws://solace-broker:8008
+sudo docker compose logs consumer --tail 15
 ```
 
-If **`docker compose config`** reports **`services.frontend conflicts with imported resource`**, your tree still has broker overrides inside **`docker-compose.yml`** — `git pull` the latest layout (overrides belong only in **`docker-compose.broker.yml`**).
+Logs should show:
 
-Logs should show `🔌 Consumer connecting to Solace (default@ws://solace-broker:8008 vpn=default)` then **Dashboard bridge ready**.
+```text
+ℹ️  Node broker URL: ws://solace-broker:8008 (demo.env SOLACE_HOST=ws://localhost:8008 …)
+🔌 Consumer connecting to Solace (default@ws://solace-broker:8008 vpn=default)
+✅ Dashboard bridge ready
+```
+
+Current Node builds **auto-rewrite** localhost → **`ws://solace-broker:8008`** when **`RUNNING_IN_DOCKER=1`** (set in the image). A **`--build`** after **`git pull`** is required so the container runs that logic.
+
+If **`docker compose config`** reports **`services.frontend conflicts with imported resource`**, pull the latest repo (broker overrides must live only in **`docker-compose.broker.yml`**).
 
 ### Broker `unhealthy` or slow start
 

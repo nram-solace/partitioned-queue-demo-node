@@ -12,6 +12,9 @@ services:
     env_file:
       - path: ./demo.env
         required: false
+    environment:
+      # Set in project .env (compose.env.example) for bundled broker — works without COMPOSE_FILE merge
+      SOLACE_DOCKER_BROKER_HOST: ${SOLACE_DOCKER_BROKER_HOST:-}
     restart: unless-stopped
 
   publisher:
@@ -27,6 +30,8 @@ services:
     env_file:
       - path: ./demo.env
         required: false
+    environment:
+      SOLACE_DOCKER_BROKER_HOST: ${SOLACE_DOCKER_BROKER_HOST:-}
     restart: unless-stopped
 
   frontend:

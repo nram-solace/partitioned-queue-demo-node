@@ -3,11 +3,11 @@ const {
   getSolaceSessionProps,
   loadDemoEnv,
   formatSolaceConnectTarget,
-  warnIfDockerLocalhostBrokerUrl,
+  logDockerBrokerUrlResolution,
 } = require('./lib/solaceEnv');
 
 loadDemoEnv();
-warnIfDockerLocalhostBrokerUrl();
+logDockerBrokerUrlResolution();
 console.log(`🔌 Publisher connecting to Solace (${formatSolaceConnectTarget()})`);
 
 const {
