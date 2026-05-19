@@ -17,12 +17,12 @@
     "documentTitle": "Queue demo - airline carrier"
   },
   "queues": {
-    "partitioned": "AirlineCarrier_PQ",
-    "nonExclusive": "AirlineCarrier_NQ",
-    "exclusive": "AirlineCarrier_EQ"
+    "partitioned": "QDemoAirlineCarrier-PQ",
+    "nonExclusive": "QDemoAirlineCarrier-NQ",
+    "exclusive": "QDemoAirlineCarrier-EQ"
   },
   "messaging": {
-    "topicPrefix": "solace/demo/airline/ops/carrier",
+    "topicPrefix": "qdemo/airline/carrier/ops",
     "partitionKeys": ["AA", "DL", "UA", "WN", "B6"],
     "partitionKeyField": "carrier",
     "topicSuffixFromField": "carrier"

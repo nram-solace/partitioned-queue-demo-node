@@ -17,12 +17,12 @@
     "documentTitle": "Queue demo - airline hub"
   },
   "queues": {
-    "partitioned": "AirlineHub_PQ",
-    "nonExclusive": "AirlineHub_NQ",
-    "exclusive": "AirlineHub_EQ"
+    "partitioned": "QDemoAirlineHub-PQ",
+    "nonExclusive": "QDemoAirlineHub-NQ",
+    "exclusive": "QDemoAirlineHub-EQ"
   },
   "messaging": {
-    "topicPrefix": "solace/demo/airline/ops/hub",
+    "topicPrefix": "qdemo/airline/hub/ops",
     "partitionKeys": ["ATL", "ORD", "DFW", "DEN", "LAX"],
     "partitionKeyField": "hub",
     "topicSuffixFromField": "hub"

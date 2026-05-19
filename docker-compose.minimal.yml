@@ -1,0 +1,8 @@
+# Apps only — connect to an existing PubSub+ broker via demo.env (Solace Cloud, host broker, remote VM).
+# Usage: docker compose -f docker-compose.minimal.yml up -d --build
+#
+# Set SOLACE_HOST / SOLACE_PUBLIC_URL in demo.env to your Web Messaging URL (e.g. wss://…:443).
+# Provision queues first: ./scripts/setup-solace.sh (from a host that can reach SEMP), or create queues manually.
+
+include:
+  - docker-compose.apps.yml

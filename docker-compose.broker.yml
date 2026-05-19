@@ -1,0 +1,24 @@
+# Merged with docker-compose.yml when using the bundled PubSub+ broker (see .env COMPOSE_FILE).
+# Sets in-network Web Transport URL and waits for solace-init when profile "broker" is active.
+
+services:
+  consumer:
+    depends_on:
+      solace-init:
+        condition: service_completed_successfully
+        required: false
+    environment:
+      SOLACE_HOST: ws://solace-broker:8008
+
+  publisher:
+    depends_on:
+      solace-init:
+        condition: service_completed_successfully
+        required: false
+    environment:
+      SOLACE_HOST: ws://solace-broker:8008
+
+  # Browser reaches broker via host-mapped :8008, not in-network solace-broker hostname.
+  frontend:
+    environment:
+      SOLACE_PUBLIC_URL: ${SOLACE_PUBLIC_URL:-ws://localhost:8008}

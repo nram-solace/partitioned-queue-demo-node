@@ -1,0 +1,46 @@
+# Demo application services (consumer, publisher, frontend).
+# Included by docker-compose.yml (optional bundled broker) and docker-compose.minimal.yml (external broker).
+
+services:
+  consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: partitioned-queue-demo-node:local
+    container_name: demo-consumer
+    command: ["node", "backend/consumer.js"]
+    env_file:
+      - path: ./demo.env
+        required: false
+    restart: unless-stopped
+
+  publisher:
+    image: partitioned-queue-demo-node:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: demo-publisher
+    command: ["node", "backend/publisher.js"]
+    depends_on:
+      consumer:
+        condition: service_started
+    env_file:
+      - path: ./demo.env
+        required: false
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    image: partitioned-queue-demo-frontend:local
+    container_name: demo-frontend
+    depends_on:
+      consumer:
+        condition: service_started
+    env_file:
+      - path: ./demo.env
+        required: false
+    ports:
+      - "3000:80"
+    restart: unless-stopped

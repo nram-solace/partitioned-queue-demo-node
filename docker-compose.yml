@@ -1,5 +1,15 @@
+# Full local stack: optional bundled PubSub+ broker (profile "broker") + demo apps.
+# Default: COMPOSE_PROFILES=broker in .env starts broker + solace-init + apps.
+#
+# Apps only (external broker): docker compose -f docker-compose.minimal.yml up -d --build
+# Broker disabled on this file:    COMPOSE_PROFILES= docker compose up -d --build
+
+include:
+  - docker-compose.apps.yml
+
 services:
   solace-broker:
+    profiles: [broker]
     image: solace/solace-pubsub-standard:latest
     container_name: solace-broker
     hostname: solace-broker
@@ -9,45 +19,31 @@ services:
         soft: 2448
         hard: 1048576
     ports:
-      # Management and Admin
       - "8080:8080"   # PubSub+ Manager (Web UI)
       - "2222:2222"   # Solace CLI (SSH)
-      
-      # Messaging Protocols
       - "55333:55555" # SMF (Solace Message Format) - TCP
       - "8008:8008"   # Web Transport (WebSocket) - Used by the demo
       - "1883:1883"   # MQTT
       - "8000:8000"   # MQTT over WebSockets
       - "5672:5672"   # AMQP
       - "9000:9000"   # REST Messaging API
-      
     environment:
-      # Admin credentials for PubSub+ Manager
       - username_admin_globalaccesslevel=admin
       - username_admin_password=admin
-      
-      # Create default VPN with admin access
-      #- system_scaling_maxconnectioncount=100
-      #- system_scaling_maxqueuemessagecount=1000
-      
     volumes:
       - solace-data:/var/lib/solace
       - solace-logs:/var/lib/solace/logs
-      
     healthcheck:
-      # Guaranteed-messaging probe on :5550 often stays red until spool is fully up; Manager/SEMP on :8080
-      # matches what you use in the browser and is a better readiness signal for this demo.
       test: ["CMD-SHELL", "curl -sf --connect-timeout 3 http://127.0.0.1:8080/ >/dev/null || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 10
       start_period: 180s
-      
     restart: unless-stopped
 
-  # After the broker container starts, provision queues/subscriptions for each profiles/*.json
-  # via scripts/setup-solace.sh (SEMP).
+  # Provision queues/subscriptions for each profiles/*.json via SEMP (requires profile "broker").
   solace-init:
+    profiles: [broker]
     image: alpine:3.19
     container_name: solace-broker-init
     depends_on:
@@ -55,11 +51,13 @@ services:
         condition: service_healthy
     volumes:
       - ./scripts:/app/scripts:ro
+      - ./profiles:/app/profiles:ro
     env_file:
       - path: ./demo.env
         required: false
     environment:
       SOLACE_HOST: solace-broker
+      PROFILES_DIR: /app/profiles
       SEMP_USER: admin
       SEMP_PASS: admin
     restart: "no"
@@ -69,66 +67,6 @@ services:
         set -e
         apk add --no-cache curl jq >/dev/null
         exec /bin/sh /app/scripts/setup-solace.sh
-
-  # Node consumer + publisher (config: demo.env at repo root).
-  consumer:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: partitioned-queue-demo-node:local
-    container_name: demo-consumer
-    command: ["node", "backend/consumer.js"]
-    depends_on:
-      solace-broker:
-        condition: service_started
-      solace-init:
-        condition: service_completed_successfully
-    env_file:
-      - path: ./demo.env
-        required: false
-    environment:
-      SOLACE_HOST: ws://solace-broker:8008
-    restart: unless-stopped
-
-  publisher:
-    image: partitioned-queue-demo-node:local
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: demo-publisher
-    command: ["node", "backend/publisher.js"]
-    depends_on:
-      solace-broker:
-        condition: service_started
-      solace-init:
-        condition: service_completed_successfully
-      consumer:
-        condition: service_started
-    env_file:
-      - path: ./demo.env
-        required: false
-    environment:
-      SOLACE_HOST: ws://solace-broker:8008
-    restart: unless-stopped
-
-  # Static React dashboard (Vite build); browser uses Web Transport :8008 → broker.
-  frontend:
-    build:
-      context: .
-      dockerfile: Dockerfile.frontend
-    image: partitioned-queue-demo-frontend:local
-    container_name: demo-frontend
-    depends_on:
-      consumer:
-        condition: service_started
-    env_file:
-      - path: ./demo.env
-        required: false
-    environment:
-      SOLACE_PUBLIC_URL: ${SOLACE_PUBLIC_URL:-ws://localhost:8008}
-    ports:
-      - "3000:80"
-    restart: unless-stopped
 
 volumes:
   solace-data:

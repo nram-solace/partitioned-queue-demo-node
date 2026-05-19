@@ -5,10 +5,39 @@ const { catalogProfiles, events, sessionSnapshot } = require('./uiTopics');
 const { commandWildcard } = require('./commandTopics');
 const { slimProfile, attachJsonPayload, parseJsonAttachment } = require('./catalogPayload');
 
+const DEFAULT_SEND_BUFFER_MAX_SIZE = 4 * 1024 * 1024; // 4 MiB (API default is 64 KiB)
+const DEFAULT_CATALOG_EVENT_MIN_INTERVAL_MS = 50; // per profile, order/prediction only
+const DROP_LOG_INTERVAL_MS = 10_000;
+
+function parsePositiveInt(raw, fallback) {
+  const n = parseInt(raw, 10);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
+
 function createSessionProps(suffix) {
-  return getSolaceSessionProps({
+  const base = getSolaceSessionProps({
     clientName: `catalog-ui-${suffix}-${Date.now()}`,
   });
+  return {
+    ...base,
+    sendBufferMaxSize: parsePositiveInt(
+      process.env.CATALOG_SEND_BUFFER_MAX_SIZE,
+      DEFAULT_SEND_BUFFER_MAX_SIZE,
+    ),
+  };
+}
+
+function isInsufficientSpace(error) {
+  if (!error) return false;
+  if (error.subcode === 22) return true;
+  const reason = String(error.reason || error.message || '');
+  return /NO_SPACE|INSUFFICIENT_SPACE/i.test(reason);
+}
+
+/** High-frequency catalog events (many queue consumers → one session). */
+function isThrottledCatalogEvent(payload) {
+  const t = payload && payload.type;
+  return t === 'order' || t === 'prediction';
 }
 
 /**
@@ -19,6 +48,13 @@ class CatalogUiSession {
     this.session = null;
     this.connected = false;
     this.onCommand = null;
+    this._lastHighFreqPublishAt = new Map();
+    this._lastDropLogAt = 0;
+    this._droppedSinceLog = 0;
+    this.eventMinIntervalMs = parsePositiveInt(
+      process.env.CATALOG_EVENT_MIN_INTERVAL_MS,
+      DEFAULT_CATALOG_EVENT_MIN_INTERVAL_MS,
+    );
   }
 
   connect({ onCommand } = {}) {
@@ -62,16 +98,45 @@ class CatalogUiSession {
     }
   }
 
+  _shouldThrottle(profileId, payload) {
+    if (!isThrottledCatalogEvent(payload)) return false;
+    const now = Date.now();
+    const last = this._lastHighFreqPublishAt.get(profileId) || 0;
+    if (now - last < this.eventMinIntervalMs) return true;
+    this._lastHighFreqPublishAt.set(profileId, now);
+    return false;
+  }
+
+  _logDroppedSend() {
+    this._droppedSinceLog += 1;
+    const now = Date.now();
+    if (now - this._lastDropLogAt < DROP_LOG_INTERVAL_MS) return;
+    console.warn(
+      `⚠️  Catalog UI publish dropped ${this._droppedSinceLog} event(s) (transport full — raise CATALOG_SEND_BUFFER_MAX_SIZE or CATALOG_EVENT_MIN_INTERVAL_MS)`,
+    );
+    this._droppedSinceLog = 0;
+    this._lastDropLogAt = now;
+  }
+
   publishTopic(topic, payload) {
     if (!this.session || !this.connected) return;
     const msg = solace.SolclientFactory.createMessage();
     msg.setDestination(solace.SolclientFactory.createTopicDestination(topic));
     attachJsonPayload(msg, payload);
     msg.setDeliveryMode(solace.MessageDeliveryModeType.DIRECT);
-    this.session.send(msg);
+    try {
+      this.session.send(msg);
+    } catch (error) {
+      if (isInsufficientSpace(error)) {
+        this._logDroppedSend();
+        return;
+      }
+      throw error;
+    }
   }
 
   publishEvent(profileId, payload) {
+    if (this._shouldThrottle(profileId, payload)) return;
     this.publishTopic(events(profileId), wrapUiEnvelope(profileId, payload));
   }
 
@@ -114,4 +179,4 @@ class CatalogUiSession {
   }
 }
 
-module.exports = { CatalogUiSession };
+module.exports = { CatalogUiSession, isInsufficientSpace, isThrottledCatalogEvent };

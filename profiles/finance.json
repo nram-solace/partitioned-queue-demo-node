@@ -17,12 +17,12 @@
     "documentTitle": "Queue demo - finance"
   },
   "queues": {
-    "partitioned": "Finance_PQ",
-    "nonExclusive": "Finance_NQ",
-    "exclusive": "Finance_EQ"
+    "partitioned": "QDemoFinance-PQ",
+    "nonExclusive": "QDemoFinance-NQ",
+    "exclusive": "QDemoFinance-EQ"
   },
   "messaging": {
-    "topicPrefix": "solace/demo/stocks/orders",
+    "topicPrefix": "qdemo/stocks/orders",
     "partitionKeys": ["AAPL", "GOOGL", "MSFT", "AMZN", "TSLA", "NVDA", "META", "IBM"],
     "partitionKeyField": "symbol",
     "topicSuffixFromField": "symbol"
