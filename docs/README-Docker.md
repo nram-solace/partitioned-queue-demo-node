@@ -232,6 +232,15 @@ docker compose build frontend
 docker compose build --no-cache frontend
 ```
 
+If the build fails during **exporting to image** with `parent snapshot … does not exist: not found`, the BuildKit layer cache is corrupted (common on Docker Desktop after upgrades or interrupted builds). Clear the builder cache and rebuild:
+
+```bash
+docker builder prune -af
+docker compose build --no-cache
+```
+
+If it still fails, restart Docker Desktop (or the Docker daemon on Linux), then run the same commands again.
+
 `.dockerignore` excludes `node_modules`, `.git`, `.dev`, and most markdown (README is kept for the frontend build context).
 
 ---
@@ -553,6 +562,25 @@ Full mapping to `window.__DEMO_CONFIG__`: [`.dev/pm/impl-central-config.md`](../
 ---
 
 ## Troubleshooting
+
+### Build fails: `parent snapshot … does not exist` (frontend / exporting to image)
+
+**Symptom:** `docker compose build` fails on the **frontend** (or any service) at `exporting to image` with:
+
+```text
+failed to prepare extraction snapshot … parent snapshot sha256:… does not exist: not found
+```
+
+**Cause:** Corrupted or stale **BuildKit** cache — not an error in `Dockerfile.frontend`.
+
+**Fix:**
+
+```bash
+docker builder prune -af
+docker compose build --no-cache
+```
+
+Restart Docker Desktop if the error persists, then rebuild. See [Build images](#build-images) for per-service `--no-cache` examples.
 
 ### Consumer/publisher: `Connection error` (dashboard connects, apps crash-loop)
 

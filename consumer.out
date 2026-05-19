@@ -1,0 +1,20 @@
+
+> stock-order-processing-demo@1.0.0 consumer
+> node backend/consumer.js
+
+🔌 Consumer connecting to Solace (default@ws://localhost:8008 vpn=default)
+📡 UI command subscription: solace/command/>
+📋 Published UI profile catalog to solace/catalog/profiles
+🚀 Starting consumers for profile: airline-carrier
+📌 Session a5516a09-4509-4884-85a6-54454ebfff47 → profile finance
+📌 Session 6ec695b9-5d49-4496-9733-763d45432b06 → profile finance
+✅ [airline-carrier] 15 queue consumers started
+🚀 Starting consumers for profile: airline-hub
+✅ [airline-hub] 15 queue consumers started
+🚀 Starting consumers for profile: finance
+✅ [finance] 15 queue consumers started
+🚀 Starting consumers for profile: retail
+✅ [retail] 15 queue consumers started
+✅ Dashboard bridge ready — 4 profile(s): airline-carrier, airline-hub, finance, retail
+📋 Published UI profile catalog to solace/catalog/profiles
+📌 Session e5edbab8-a524-4ceb-90fb-7ae5b69bbb60 → profile finance

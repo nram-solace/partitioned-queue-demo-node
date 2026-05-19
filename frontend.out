@@ -1,0 +1,26 @@
+
+> stock-order-processing-demo@1.0.0 prefrontend
+> npm run sync-config
+
+
+> stock-order-processing-demo@1.0.0 sync-config
+> node scripts/sync-frontend-config.js
+
+Wrote /Users/rameshnatarajan/Solace/dev/SolaceServices/partitioned-queue-demo-node/frontend/public/config.js
+
+> stock-order-processing-demo@1.0.0 frontend
+> cd frontend && npm run dev
+
+
+> stock-dashboard@1.0.0 dev
+> vite
+
+
+  VITE v5.4.20  ready in 171 ms
+
+  ➜  Local:   http://localhost:3000/
+  ➜  Network: use --host to expose
+[baseline-browser-mapping] The data in this module is over two months old.  To ensure accurate Baseline data, please update: `npm i baseline-browser-mapping@latest -D`
+Browserslist: browsers data (caniuse-lite) is 8 months old. Please run:
+  npx update-browserslist-db@latest
+  Why you should do it regularly: https://github.com/browserslist/update-db#readme

@@ -1,0 +1,13 @@
+
+> stock-order-processing-demo@1.0.0 publisher
+> node backend/publisher.js
+
+🔌 Publisher connecting to Solace (default@ws://localhost:8008 vpn=default)
+✅ Publisher connected [airline-carrier]
+🚀 Publisher [airline-carrier] 2 msg/sec → qdemo/airline/carrier/ops
+✅ Publisher connected [airline-hub]
+🚀 Publisher [airline-hub] 2 msg/sec → qdemo/airline/hub/ops
+✅ Publisher connected [finance]
+🚀 Publisher [finance] 2 msg/sec → qdemo/stocks/orders
+✅ Publisher connected [retail]
+🚀 Publisher [retail] 2 msg/sec → qdemo/retail/fulfillment

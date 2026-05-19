@@ -165,7 +165,6 @@ function PredictionCard({
   const pqPred = latestPredictions[seriesKey]?.pq
   const nqPred = latestPredictions[seriesKey]?.nq
   const publishedEvents = publishedCountBySeries?.[seriesKey]
-  const seriesLabel = uiPrediction?.seriesLabel || 'Series'
   const valueLabel = uiPrediction?.valueLabel || 'Value'
 
   const pqDelta = actual && pqPred != null ? ((pqPred - actual) / actual) * 100 : null
@@ -200,7 +199,7 @@ function PredictionCard({
   return (
     <div className="bg-slate-800 rounded-xl p-5 border border-slate-700">
       <div
-        className="mb-3 space-y-1.5"
+        className="mb-3"
         title={`${seriesKey}${eventsLabel} — ${valueLabel}: ${formatPredictionValue(actual, uiPrediction)}`}
       >
         <div className="flex items-baseline justify-between gap-4">
@@ -217,12 +216,6 @@ function PredictionCard({
             </span>
           </span>
         </div>
-        <p className="text-xs text-slate-500 leading-snug">
-          Predicting{' '}
-          <span className="text-slate-400">{valueLabel.toLowerCase()}</span> per{' '}
-          <span className="text-slate-400">{seriesLabel.toLowerCase()}</span>
-          <span className="text-slate-500"> — publisher actual vs PQ / NQ estimates</span>
-        </p>
       </div>
 
       <div className="h-48 mb-3">
@@ -312,8 +305,8 @@ export default function PredictionView({
   publishedCountBySeries = {},
   accuracyGapSamplesBySeries = {},
 }) {
-  const seriesLabel = uiPrediction?.seriesLabel || 'partition key'
-  const valueLabel = uiPrediction?.valueLabel || 'value'
+  const seriesLabel = uiPrediction?.seriesLabel || 'Series'
+  const valueLabel = uiPrediction?.valueLabel || 'Value'
   const helpAccuracyCap =
     typeof uiPrediction?.accuracyMaxGapPercent === 'number' &&
     Number.isFinite(uiPrediction.accuracyMaxGapPercent) &&
@@ -342,10 +335,18 @@ export default function PredictionView({
         >
           Help
         </button>
-        <div className="flex flex-wrap items-center gap-5 bg-slate-800 rounded-lg px-5 py-2.5 border border-slate-700 shrink-0">
-          <LegendItem color="#94a3b8" label="Actual" />
-          <LegendItem color="#818cf8" label="PQ Prediction" dashed />
-          <LegendItem color="#fb923c" label={`NQ (consumer ${canonicalNqConsumer})`} dashed />
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 sm:gap-5 sm:ml-auto min-w-0">
+          <p className="text-xs text-slate-500 leading-snug">
+            Predicting{' '}
+            <span className="text-slate-400">{valueLabel.toLowerCase()}</span> per{' '}
+            <span className="text-slate-400">{seriesLabel.toLowerCase()}</span>
+            <span className="text-slate-500"> — publisher actual vs PQ / NQ estimates</span>
+          </p>
+          <div className="flex flex-wrap items-center gap-5 bg-slate-800 rounded-lg px-5 py-2.5 border border-slate-700 shrink-0">
+            <LegendItem color="#94a3b8" label="Actual" />
+            <LegendItem color="#818cf8" label="PQ Prediction" dashed />
+            <LegendItem color="#fb923c" label={`NQ (consumer ${canonicalNqConsumer})`} dashed />
+          </div>
         </div>
       </div>
 
