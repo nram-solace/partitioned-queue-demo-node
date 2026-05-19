@@ -250,6 +250,12 @@ function validateDemoProfile(profile) {
   if (uiPred.helpTopic !== undefined && (typeof uiPred.helpTopic !== 'string' || !uiPred.helpTopic.trim())) {
     throw new Error('ui.prediction.helpTopic must be a non-empty string when present');
   }
+  if (uiPred.accuracyMaxGapPercent !== undefined) {
+    const cap = uiPred.accuracyMaxGapPercent;
+    if (typeof cap !== 'number' || !Number.isFinite(cap) || cap <= 0) {
+      throw new Error('ui.prediction.accuracyMaxGapPercent must be a positive number when present');
+    }
+  }
 
   resolvePlugin(profile).validateProfile(profile);
 

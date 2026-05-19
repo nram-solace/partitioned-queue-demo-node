@@ -123,6 +123,10 @@ function App() {
   const [latestPredictions, setLatestPredictions] = useState({})
   const [priceHistory, setPriceHistory] = useState({})
   const predictionsRef = useRef({})
+  /** Per series/channel: incremented on each prediction WS message. */
+  const predVersionRef = useRef({})
+  /** Versions snapshotted into chart history on the previous publisher tick. */
+  const lastSnapPredVersionRef = useRef({})
   const lastRollingPublisherCountRef = useRef(-1)
   const publishedTotalBaselineRef = useRef(null)
   const publishedCountBaselineRef = useRef(null)
@@ -214,12 +218,15 @@ function App() {
         const next = { ...prev }
         Object.entries(data.actuals).forEach(([seriesKey, actual]) => {
           const preds = predictionsRef.current[seriesKey] || {}
+          const vers = predVersionRef.current[seriesKey] || { pq: 0, nq: 0 }
+          const snap = lastSnapPredVersionRef.current[seriesKey] || { pq: 0, nq: 0 }
           const point = {
             time: timestamp,
             actual,
-            pq: preds.pq ?? null,
-            nq: preds.nq ?? null,
+            pq: vers.pq > snap.pq && preds.pq != null ? preds.pq : null,
+            nq: vers.nq > snap.nq && preds.nq != null ? preds.nq : null,
           }
+          lastSnapPredVersionRef.current[seriesKey] = { pq: vers.pq, nq: vers.nq }
           const history = [...(next[seriesKey] || []), point]
           if (history.length > HISTORY_LIMIT) history.shift()
           next[seriesKey] = history
@@ -328,6 +335,8 @@ function App() {
 
   const resetPredictionState = useCallback(() => {
     predictionsRef.current = {}
+    predVersionRef.current = {}
+    lastSnapPredVersionRef.current = {}
     latestActualRef.current = {}
     lastPublisherStatsAtRef.current = 0
     lastRollingPublisherCountRef.current = -1
@@ -398,6 +407,8 @@ function App() {
           const key = String(seriesKey)
           if (!predictionsRef.current[key]) predictionsRef.current[key] = {}
           predictionsRef.current[key][field] = predicted
+          if (!predVersionRef.current[key]) predVersionRef.current[key] = { pq: 0, nq: 0 }
+          predVersionRef.current[key][field] += 1
           setLatestPredictions((prev) => ({
             ...prev,
             [key]: { ...prev[key], [field]: predicted },

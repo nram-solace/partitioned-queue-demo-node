@@ -106,8 +106,8 @@ function PredictionChannelRow({
     ? `${label}: ${sampleCount}/${minSamples} chart points with both actual and ${label} — bar appears once the visible window has enough overlapping samples.`
     : meanGapPct != null && Number.isFinite(meanGapPct)
       ? atClosenessScaleFloor
-        ? `Mean |Δ| on the chart (recent window): ${meanGapPct.toFixed(2)}% of price (≥ ${cap}% scale max). NA means the bar is off-scale, not “zero match.” Last ${sampleCount} chart sample(s), max ${CHART_ACCURACY_GAP_WINDOW}; total messages do not affect this.`
-        : `Mean |Δ| on the chart (recent window): ${meanGapPct.toFixed(2)}% of price. Closeness ${Math.round(barW)}% — 100 ≈ avg gap ~0; at or above ${cap}% mean gap we show NA instead of 0%. Based on last ${sampleCount} chart sample(s), max ${CHART_ACCURACY_GAP_WINDOW}; total published messages do not affect this.`
+        ? `Mean |Δ| on the chart (recent window): ${meanGapPct.toFixed(2)}% of actual (≥ ${cap}% scale max). NA means the bar is off-scale, not “zero match.” Last ${sampleCount} chart sample(s) where ${label} updated, max ${CHART_ACCURACY_GAP_WINDOW}; total messages do not affect this.`
+        : `Mean |Δ| on the chart (recent window): ${meanGapPct.toFixed(2)}% of actual. Closeness ${Math.round(barW)}% — 100 ≈ avg gap ~0; at or above ${cap}% mean gap we show NA instead of 0%. Based on last ${sampleCount} chart sample(s) where ${label} had a fresh prediction, max ${CHART_ACCURACY_GAP_WINDOW}; stale NQ ticks are not repeated between updates.`
       : 'No overlapping actual + prediction samples in the chart window yet.'
 
   return (
@@ -199,19 +199,26 @@ function PredictionCard({
   const pqDelta = actual && pqPred != null ? ((pqPred - actual) / actual) * 100 : null
   const nqDelta = actual && nqPred != null ? ((nqPred - actual) / actual) * 100 : null
 
+  const accuracyCap =
+    typeof uiPrediction?.accuracyMaxGapPercent === 'number' &&
+    Number.isFinite(uiPrediction.accuracyMaxGapPercent) &&
+    uiPrediction.accuracyMaxGapPercent > 0
+      ? uiPrediction.accuracyMaxGapPercent
+      : CHART_ACCURACY_SHARED_MAX_GAP_PERCENT
+
   const pqBar = chartChannelGapStats(
     history,
     'pq',
     CHART_ACCURACY_GAP_WINDOW,
     MIN_SAMPLES_FOR_CLOSENESS_METRIC,
-    CHART_ACCURACY_SHARED_MAX_GAP_PERCENT,
+    accuracyCap,
   )
   const nqBar = chartChannelGapStats(
     history,
     'nq',
     CHART_ACCURACY_GAP_WINDOW,
     MIN_SAMPLES_FOR_CLOSENESS_METRIC,
-    CHART_ACCURACY_SHARED_MAX_GAP_PERCENT,
+    accuracyCap,
   )
 
   const eventsLabel =
@@ -307,7 +314,7 @@ function PredictionCard({
           meanGapPct={pqBar.meanGapPct}
           barColorClass="bg-indigo-500"
           sampleCount={pqBar.sampleCount}
-          scaleMaxGapPercent={CHART_ACCURACY_SHARED_MAX_GAP_PERCENT}
+          scaleMaxGapPercent={accuracyCap}
         />
         <PredictionChannelRow
           label="NQ"
@@ -316,7 +323,7 @@ function PredictionCard({
           meanGapPct={nqBar.meanGapPct}
           barColorClass="bg-orange-500"
           sampleCount={nqBar.sampleCount}
-          scaleMaxGapPercent={CHART_ACCURACY_SHARED_MAX_GAP_PERCENT}
+          scaleMaxGapPercent={accuracyCap}
         />
       </div>
     </div>
@@ -334,6 +341,12 @@ export default function PredictionView({
 }) {
   const seriesLabel = uiPrediction?.seriesLabel || 'partition key'
   const valueLabel = uiPrediction?.valueLabel || 'value'
+  const helpAccuracyCap =
+    typeof uiPrediction?.accuracyMaxGapPercent === 'number' &&
+    Number.isFinite(uiPrediction.accuracyMaxGapPercent) &&
+    uiPrediction.accuracyMaxGapPercent > 0
+      ? uiPrediction.accuracyMaxGapPercent
+      : CHART_ACCURACY_SHARED_MAX_GAP_PERCENT
   const [helpOpen, setHelpOpen] = useState(false)
 
   useEffect(() => {
@@ -405,7 +418,8 @@ export default function PredictionView({
               above and <span className="text-red-300">red</span> when below. The <strong>μ≈</strong> label and{' '}
               <strong>bar + %</strong> use the same data as the lines: at each publisher snapshot we take actual and the
               PQ/NQ values shown on the chart, compute |pred − actual| / actual, and average the last up to{' '}
-              <strong>{CHART_ACCURACY_GAP_WINDOW}</strong> such points (only rows where that channel has a value).{' '}
+              <strong>{CHART_ACCURACY_GAP_WINDOW}</strong> such points (only publisher ticks where that channel received a{' '}
+              <strong>new</strong> prediction since the previous tick — stale NQ is not copied while actual moves).{' '}
               <strong>Total published message count does not enter this average</strong> — anything older than that
               trailing slice is ignored, so the bar reflects recent chart behavior, not “since connect” or thousands of
               orders. The headline <strong>Δ</strong> is only the latest tick, while <strong>μ</strong> and the bar are the
@@ -413,7 +427,7 @@ export default function PredictionView({
               Closeness % stays <strong>—</strong> until at least <strong>{MIN_SAMPLES_FOR_CLOSENESS_METRIC}</strong>{' '}
               overlapping points so a tiny slice of the tape does not dominate. Map 0–100 so{' '}
               <strong>100 ≈ average gap ~0</strong>. <strong>PQ and NQ share one mean-gap cap</strong> (
-              <strong>{CHART_ACCURACY_SHARED_MAX_GAP_PERCENT}%</strong>) so higher % means lower average error on that
+              <strong>{helpAccuracyCap}%</strong>) so higher % means lower average error on that
               channel — comparable across rows. When the mean reaches or passes that cap we show <strong>NA</strong>{' '}
               instead of “0%” so it is not read as “zero accuracy.” Hover the bar or μ≈ for the numeric mean.
             </p>
