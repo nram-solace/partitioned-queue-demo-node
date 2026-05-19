@@ -1,7 +1,9 @@
 const solace = require('solclientjs');
-const { loadDemoEnv } = require('./lib/solaceEnv');
+const { loadDemoEnv, formatSolaceConnectTarget, warnIfDockerLocalhostBrokerUrl } = require('./lib/solaceEnv');
 
 loadDemoEnv();
+warnIfDockerLocalhostBrokerUrl();
+console.log(`🔌 Consumer connecting to Solace (${formatSolaceConnectTarget()})`);
 
 const { DashboardBridge } = require('./lib/dashboardBridge');
 

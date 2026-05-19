@@ -1,5 +1,6 @@
 FROM node:20-alpine
 WORKDIR /app
+ENV RUNNING_IN_DOCKER=1
 
 COPY package.json ./
 RUN npm install --omit=dev

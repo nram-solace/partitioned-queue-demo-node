@@ -57,9 +57,13 @@ services:
         required: false
     environment:
       SOLACE_HOST: solace-broker
-      PROFILES_DIR: /app/profiles
+      SEMP_HOST: solace-broker
+      MSG_VPN: default
+      SEMP_SCHEME: http
+      SEMP_PORT: 8080
       SEMP_USER: admin
       SEMP_PASS: admin
+      PROFILES_DIR: /app/profiles
     restart: "no"
     entrypoint: ["/bin/sh", "-c"]
     command:
@@ -67,6 +71,39 @@ services:
         set -e
         apk add --no-cache curl jq >/dev/null
         exec /bin/sh /app/scripts/setup-solace.sh
+
+  # In-network messaging + SEMP for bundled broker (do not rely on a gitignored .env merge file).
+  consumer:
+    depends_on:
+      solace-broker:
+        condition: service_healthy
+        required: false
+      solace-init:
+        condition: service_completed_successfully
+        required: false
+    environment:
+      SOLACE_HOST: ws://solace-broker:8008
+      SOLACE_VPN: default
+      SOLACE_USERNAME: default
+      SOLACE_PASSWORD: default
+
+  publisher:
+    depends_on:
+      solace-broker:
+        condition: service_healthy
+        required: false
+      solace-init:
+        condition: service_completed_successfully
+        required: false
+    environment:
+      SOLACE_HOST: ws://solace-broker:8008
+      SOLACE_VPN: default
+      SOLACE_USERNAME: default
+      SOLACE_PASSWORD: default
+
+  frontend:
+    environment:
+      SOLACE_PUBLIC_URL: ${SOLACE_PUBLIC_URL:-ws://localhost:8008}
 
 volumes:
   solace-data:

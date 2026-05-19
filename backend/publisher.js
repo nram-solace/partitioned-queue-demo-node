@@ -1,7 +1,14 @@
 const solace = require('solclientjs');
-const { getSolaceSessionProps, loadDemoEnv, formatSolaceConnectTarget } = require('./lib/solaceEnv');
+const {
+  getSolaceSessionProps,
+  loadDemoEnv,
+  formatSolaceConnectTarget,
+  warnIfDockerLocalhostBrokerUrl,
+} = require('./lib/solaceEnv');
 
 loadDemoEnv();
+warnIfDockerLocalhostBrokerUrl();
+console.log(`🔌 Publisher connecting to Solace (${formatSolaceConnectTarget()})`);
 
 const {
   listDemoProfiles,

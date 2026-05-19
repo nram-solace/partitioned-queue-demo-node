@@ -17,11 +17,10 @@ For domain concepts and dashboard usage, see [README.md](../README.md). Implemen
 |------|---------|
 | [docker-compose.apps.yml](../docker-compose.apps.yml) | Shared **consumer**, **publisher**, **frontend** |
 | [docker-compose.yml](../docker-compose.yml) | Includes apps + optional **`solace-broker`** / **`solace-init`** (`profiles: [broker]`) |
-| [docker-compose.broker.yml](../docker-compose.broker.yml) | Merged for full stack: in-network `SOLACE_HOST`, wait for `solace-init` |
 | [docker-compose.minimal.yml](../docker-compose.minimal.yml) | Apps only (includes `docker-compose.apps.yml`) |
-| [.env](../.env) | Default `COMPOSE_PROFILES=broker` and `COMPOSE_FILE=…:docker-compose.broker.yml` |
+| [compose.env.example](../compose.env.example) | Copy to **`.env`** to enable `COMPOSE_PROFILES=broker` (optional if you export it) |
 
-`docker compose -f docker-compose.minimal.yml` **ignores** `.env` `COMPOSE_FILE` (Compose uses only the `-f` file).
+`docker-compose.yml` sets **`SOLACE_HOST=ws://solace-broker:8008`** on consumer/publisher (no second compose file required). `docker compose -f docker-compose.minimal.yml` uses **`demo.env`** URLs only.
 
 ---
 
@@ -74,6 +73,7 @@ The dashboard uses **Solace Web Transport** for catalog events, stats, and comma
 
 ```bash
 cp demo.env.example demo.env
+cp compose.env.example .env   # enables bundled broker profile (gitignored on deploy hosts)
 # Edit demo.env — see tables below for full-stack vs minimal
 ```
 
@@ -144,7 +144,7 @@ Header should show **Connected to Solace** once the consumer is up and catalog t
 demo.env (repo root; gitignored — template: demo.env.example)
         │
         ├── docker compose env_file (all app services)
-        ├── docker-compose.broker.yml → SOLACE_HOST for bundled broker (full stack only)
+        ├── docker-compose.yml → SOLACE_HOST=ws://solace-broker:8008 (full stack only)
         │
         ├── consumer / publisher → backend/lib/solaceEnv.js
         ├── solace-init → scripts/setup-solace.sh (SEMP host = solace-broker)
@@ -158,7 +158,7 @@ demo.env (repo root; gitignored — template: demo.env.example)
 
 | Variable | Host `npm run` | Full stack (`docker compose up`) | Apps only (`docker-compose.minimal.yml`) |
 |----------|----------------|----------------------------------|------------------------------------------|
-| `SOLACE_HOST` | `ws://localhost:8008` | Set by **docker-compose.broker.yml** → `ws://solace-broker:8008` | Your broker Web Messaging URL (`wss://…` or `ws://…`) |
+| `SOLACE_HOST` | `ws://localhost:8008` | Overridden in **docker-compose.yml** → `ws://solace-broker:8008` | Your broker Web Messaging URL (`wss://…` or `ws://…`) |
 | `SOLACE_PUBLIC_URL` | *(omit)* | `ws://localhost:8008` (Compose default on frontend) | Same URL the **browser** must use |
 | `SOLACE_VPN` / user / password | `default` | `default` (bundled) or your cloud VPN | Your broker credentials |
 
@@ -494,7 +494,7 @@ docker compose up -d --build
 
 Broker sizing: **Standard_B2ms (8 GiB)** or larger is more reliable than 4 GiB for PubSub+ Standard plus app containers. See [`.dev/pm/impl-public-hosting.md`](../.dev/pm/impl-public-hosting.md) for Azure NSG and VM notes.
 
-**`demo.env` for bundled broker on a VM:** use **`demo-local.env`** as the template (`SOLACE_VPN=default`, `SOLACE_USERNAME=default`, `SOLACE_PASSWORD=default`). If `demo.env` still has **Solace Cloud** VPN/user/password, `docker compose up` will fail to connect until you fix it — **`docker-compose.broker.yml`** now forces `default`/`default` on consumer, publisher, and init, but only when you use the default Compose merge (`.env` `COMPOSE_FILE=…:docker-compose.broker.yml`).
+**`demo.env` for bundled broker on a VM:** use **`demo-local.env`** as the template (`SOLACE_VPN=default`, `SOLACE_USERNAME=default`, `SOLACE_PASSWORD=default`). **`docker-compose.yml`** forces `default`/`default` and `ws://solace-broker:8008` on consumer/publisher regardless of cloud-oriented values left in `demo.env`.
 
 ```env
 SOLACE_PUBLIC_URL=ws://20.51.158.49:8008
@@ -553,6 +553,26 @@ Full mapping to `window.__DEMO_CONFIG__`: [`.dev/pm/impl-central-config.md`](../
 
 ## Troubleshooting
 
+### Consumer/publisher: `Connection error` (dashboard connects, apps crash-loop)
+
+**Symptom:** Browser shows **Connected**; `demo-consumer` / `demo-publisher` log `Connection error` and restart; broker events show only **`dashboard-*`** clients.
+
+**Cause:** Node containers were using **`ws://localhost:8008`** (localhost inside a container is not the broker). This happened on older deployments that relied on a gitignored **`.env`** with `COMPOSE_FILE=…:docker-compose.broker.yml` — after `git pull`, that file is often missing.
+
+**Fix (on the VM):**
+
+```bash
+cd /opt/queue-demo
+git pull
+cp compose.env.example .env    # optional: COMPOSE_PROFILES=broker
+docker compose config | grep 'SOLACE_HOST: ws://solace-broker'
+docker compose up -d --build --force-recreate consumer publisher
+docker exec demo-consumer printenv SOLACE_HOST
+# must print: ws://solace-broker:8008
+```
+
+Logs should show `🔌 Consumer connecting to Solace (default@ws://solace-broker:8008 vpn=default)` then **Dashboard bridge ready**.
+
 ### Broker `unhealthy` or slow start
 
 - First boot often needs **1–3 minutes** before port **8080** responds inside the container.
@@ -596,7 +616,7 @@ docker compose -f docker-compose.minimal.yml up -d --force-recreate frontend
 
 Verify served config: `docker exec demo-frontend cat /usr/share/nginx/html/config.js` — `solaceUrl` must be your **`wss://`** URL, not `null` with localhost fallback.
 
-**Bundled broker:** `docker-compose.broker.yml` sets `SOLACE_PUBLIC_URL=ws://localhost:8008` on the frontend only.
+**Bundled broker on a VM:** set `SOLACE_PUBLIC_URL=ws://<PUBLIC_IP>:8008` in `demo.env` and recreate **frontend**.
 
 Other checks:
 
@@ -649,7 +669,7 @@ Install Compose **v2** and run `docker compose`, not `docker-compose`.
 | [docker-compose.yml](../docker-compose.yml) | Apps + optional bundled broker (`profile: broker`) |
 | [docker-compose.minimal.yml](../docker-compose.minimal.yml) | Apps only (external broker) |
 | [docker-compose.apps.yml](../docker-compose.apps.yml) | Shared application services |
-| [docker-compose.broker.yml](../docker-compose.broker.yml) | Bundled-broker URL + init ordering |
+| [compose.env.example](../compose.env.example) | `COMPOSE_PROFILES=broker` template for `.env` |
 | [scripts/setup-solace.sh](../scripts/setup-solace.sh) | SEMP provisioning |
 
 ---
