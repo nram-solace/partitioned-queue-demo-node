@@ -1,5 +1,5 @@
 const solace = require('solclientjs');
-const { getSolaceSessionProps } = require('./solaceEnv');
+const { getSolaceSessionProps, formatSolaceConnectTarget } = require('./solaceEnv');
 const { wrapUiEnvelope } = require('./uiEnvelope');
 const { catalogProfiles, events, sessionSnapshot } = require('./uiTopics');
 const { commandWildcard } = require('./commandTopics');
@@ -75,7 +75,11 @@ class CatalogUiSession {
       });
 
       this.session.on(solace.SessionEventCode.CONNECT_FAILED_ERROR, (sessionEvent) => {
-        reject(new Error(sessionEvent.infoStr));
+        reject(
+          new Error(
+            `${sessionEvent.infoStr || 'Connection failed'} (${formatSolaceConnectTarget()})`,
+          ),
+        );
       });
 
       this.session.on(solace.SessionEventCode.MESSAGE, (message) => {

@@ -25,7 +25,15 @@ function getSolaceSessionProps(opts) {
   };
 }
 
+/** Log session URL/VPN on connect failure (password omitted). */
+function formatSolaceConnectTarget() {
+  loadDemoEnv();
+  const { url, vpnName, userName } = getSolaceNodeConfig(process.env);
+  return `${userName}@${url} vpn=${vpnName}`;
+}
+
 module.exports = {
   loadDemoEnv,
   getSolaceSessionProps,
+  formatSolaceConnectTarget,
 };

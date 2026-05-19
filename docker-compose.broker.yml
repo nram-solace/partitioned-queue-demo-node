@@ -1,7 +1,17 @@
 # Merged with docker-compose.yml when using the bundled PubSub+ broker (see .env COMPOSE_FILE).
-# Sets in-network Web Transport URL and waits for solace-init when profile "broker" is active.
+# Overrides messaging + SEMP settings so a cloud-oriented demo.env does not break the local broker.
 
 services:
+  solace-init:
+    environment:
+      SOLACE_HOST: solace-broker
+      SEMP_HOST: solace-broker
+      MSG_VPN: default
+      SEMP_SCHEME: http
+      SEMP_PORT: 8080
+      SEMP_USER: admin
+      SEMP_PASS: admin
+
   consumer:
     depends_on:
       solace-init:
@@ -9,6 +19,9 @@ services:
         required: false
     environment:
       SOLACE_HOST: ws://solace-broker:8008
+      SOLACE_VPN: default
+      SOLACE_USERNAME: default
+      SOLACE_PASSWORD: default
 
   publisher:
     depends_on:
@@ -17,8 +30,11 @@ services:
         required: false
     environment:
       SOLACE_HOST: ws://solace-broker:8008
+      SOLACE_VPN: default
+      SOLACE_USERNAME: default
+      SOLACE_PASSWORD: default
 
-  # Browser reaches broker via host-mapped :8008, not in-network solace-broker hostname.
+  # Browser uses host-mapped :8008. Set SOLACE_PUBLIC_URL=ws://<VM-IP>:8008 in demo.env on remote VMs.
   frontend:
     environment:
       SOLACE_PUBLIC_URL: ${SOLACE_PUBLIC_URL:-ws://localhost:8008}

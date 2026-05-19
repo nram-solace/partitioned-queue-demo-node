@@ -1,5 +1,5 @@
 const solace = require('solclientjs');
-const { getSolaceSessionProps, loadDemoEnv } = require('./lib/solaceEnv');
+const { getSolaceSessionProps, loadDemoEnv, formatSolaceConnectTarget } = require('./lib/solaceEnv');
 
 loadDemoEnv();
 
@@ -80,7 +80,11 @@ class DemoPublisher {
 
         this.session.on(solace.SessionEventCode.CONNECT_FAILED_ERROR, (sessionEvent) => {
           this.initialConnectResolve = null;
-          reject(new Error(sessionEvent.infoStr));
+          reject(
+            new Error(
+              `${sessionEvent.infoStr || 'Connection failed'} (${formatSolaceConnectTarget()})`,
+            ),
+          );
         });
 
         this.session.on(solace.SessionEventCode.DISCONNECTED, () => {

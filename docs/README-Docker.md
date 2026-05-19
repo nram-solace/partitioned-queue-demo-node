@@ -494,6 +494,14 @@ docker compose up -d --build
 
 Broker sizing: **Standard_B2ms (8 GiB)** or larger is more reliable than 4 GiB for PubSub+ Standard plus app containers. See [`.dev/pm/impl-public-hosting.md`](../.dev/pm/impl-public-hosting.md) for Azure NSG and VM notes.
 
+**`demo.env` for bundled broker on a VM:** use **`demo-local.env`** as the template (`SOLACE_VPN=default`, `SOLACE_USERNAME=default`, `SOLACE_PASSWORD=default`). If `demo.env` still has **Solace Cloud** VPN/user/password, `docker compose up` will fail to connect until you fix it — **`docker-compose.broker.yml`** now forces `default`/`default` on consumer, publisher, and init, but only when you use the default Compose merge (`.env` `COMPOSE_FILE=…:docker-compose.broker.yml`).
+
+```env
+SOLACE_PUBLIC_URL=ws://20.51.158.49:8008
+```
+
+Open NSG port **8008**. Re-run init after profile changes: `docker compose run --rm solace-init`.
+
 ### Solace Cloud or external broker (apps only)
 
 Use **`docker-compose.minimal.yml`** and follow **[Remote broker: queues and subscriptions](#remote-broker-queues-and-subscriptions-minimal-compose)** end to end:
