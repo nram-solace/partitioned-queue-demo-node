@@ -18,10 +18,11 @@ This is an **interactive demo** for Solace **PubSub+** queue types.
 - retail: `profiles/retail.json` — fulfillment orders; **line total** prediction by store
 - airline-carrier: `profiles/airline-carrier.json` — flight status; **delay (minutes)** prediction partitioned by **carrier** (IATA codes)
 - airline-hub: `profiles/airline-hub.json` — same payload shape; **delay** prediction partitioned by **hub** (airport codes)
+- drilling: `profiles/drilling.json` — well lifecycle events; **wellhead pressure (psi)** prediction partitioned by **well id**
 
 You can add more domains (energy, logistics, and so on) by copying those samples and staying within the rules enforced in `backend/lib/demoProfile.js`.
 
-Profiles with **`ui.prediction`** show a **Prediction** tab: charts compare **actual** values from the publisher with lightweight EMA+VWAP estimates on the **partitioned** and **non-exclusive** consumer paths. Finance uses per-symbol **price**; retail uses **line total** by store; airline profiles use **delay (min)** by carrier or hub. See [Finance profile and the Prediction UI](#finance-profile-and-the-prediction-ui) for behavior and env vars.
+Profiles with **`ui.prediction`** show a **Prediction** tab: charts compare **actual** values from the publisher with lightweight EMA+VWAP estimates on the **partitioned** and **non-exclusive** consumer paths. Finance uses per-symbol **price**; retail uses **line total** by store; airline profiles use **delay (min)** by carrier or hub; drilling uses **wellhead pressure (psi)** by well id. See [Finance profile and the Prediction UI](#finance-profile-and-the-prediction-ui) for behavior and env vars.
 
 ![Screenshot](./resources/screenshot-pred.png)
 
