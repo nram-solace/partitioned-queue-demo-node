@@ -14,7 +14,7 @@
   "branding": {
     "appTitle": "Market data demo",
     "subtitle": "Solace PubSub+ queue types",
-    "documentTitle": "Queue demo - finance"
+    "documentTitle": "Solace Queues/Topics Demo"
   },
   "queues": {
     "partitioned": "QDemoFinance-PQ",

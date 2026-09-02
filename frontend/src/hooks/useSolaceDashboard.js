@@ -41,6 +41,7 @@ export function useSolaceDashboard({
   const [connectionHint, setConnectionHint] = useState('')
   const sessionRef = useRef(null)
   const profileSubIdsRef = useRef([])
+  const rawListenersRef = useRef(new Set())
   const onMessageRef = useRef(onMessage)
   const onConnectRef = useRef(onConnect)
   const onDisconnectRef = useRef(onDisconnect)
@@ -103,6 +104,31 @@ export function useSolaceDashboard({
     publishCommand({ type: 'requestSnapshot' })
   }, [publishCommand])
 
+  const subscribeTopic = useCallback((topic) => {
+    const s = sessionRef.current
+    if (!s || !topic) return
+    try {
+      s.subscribe(solace.SolclientFactory.createTopicDestination(topic), true, topic, 10000)
+    } catch (_) {
+      /* ignore */
+    }
+  }, [])
+
+  const unsubscribeTopic = useCallback((topic) => {
+    const s = sessionRef.current
+    if (!s || !topic) return
+    try {
+      s.unsubscribe(solace.SolclientFactory.createTopicDestination(topic), true, topic, 10000)
+    } catch (_) {
+      /* ignore */
+    }
+  }, [])
+
+  const addRawMessageListener = useCallback((fn) => {
+    rawListenersRef.current.add(fn)
+    return () => rawListenersRef.current.delete(fn)
+  }, [])
+
   useEffect(() => {
     const s = sessionRef.current
     if (!connected || !s) return
@@ -155,11 +181,31 @@ export function useSolaceDashboard({
       })
 
       session.on(solace.SessionEventCode.MESSAGE, (message) => {
+        let data
         try {
-          const data = parseSolaceJsonMessage(message)
-          if (data) onMessageRef.current(data)
+          data = parseSolaceJsonMessage(message)
         } catch (error) {
           console.error('Failed to parse catalog message:', error)
+          return
+        }
+        if (!data) return
+        onMessageRef.current(data)
+        if (rawListenersRef.current.size > 0) {
+          let topic = null
+          try {
+            topic = message.getDestination()?.getName() || null
+          } catch (_) {
+            /* ignore */
+          }
+          if (topic) {
+            rawListenersRef.current.forEach((fn) => {
+              try {
+                fn(topic, data)
+              } catch (error) {
+                console.error('Raw message listener failed:', error)
+              }
+            })
+          }
         }
       })
 
@@ -200,5 +246,13 @@ export function useSolaceDashboard({
     }
   }, [publishCommand, unsubscribeProfileTopics])
 
-  return { connected, connectionHint, publishCommand, requestSnapshot }
+  return {
+    connected,
+    connectionHint,
+    publishCommand,
+    requestSnapshot,
+    subscribeTopic,
+    unsubscribeTopic,
+    addRawMessageListener,
+  }
 }

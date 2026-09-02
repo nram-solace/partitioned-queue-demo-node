@@ -13,7 +13,7 @@ function Header({
 }) {
   const predictionUi = profile?.ui?.prediction
   const predictionTabLabel = predictionUi?.tabLabel?.trim() || 'Prediction'
-  const primaryTitle = `Solace Queue Types Demo - ${dashboardVersionLabel()}`
+  const primaryTitle = `Solace Queues/Topics Demo - ${dashboardVersionLabel()}`
   const profileTitle = profile?.branding?.appTitle?.trim() || null
   const showPicker = catalogProfiles.length > 1
 
@@ -68,11 +68,12 @@ function Header({
                 {connected ? connectionLabel || 'Solace' : 'Disconnected'}
               </span>
             </div>
-            {predictionUi && typeof onViewChange === 'function' && (
+            {profile && typeof onViewChange === 'function' && (
               <div className="flex bg-slate-700/50 rounded-lg p-1 gap-1">
                 {[
-                  { key: 'cards', label: 'Message Flow' },
-                  { key: 'prediction', label: predictionTabLabel },
+                  { key: 'cards', label: 'Queue Consumers' },
+                  ...(predictionUi ? [{ key: 'prediction', label: predictionTabLabel }] : []),
+                  { key: 'topics', label: profile?.ui?.topicExplorer?.tabLabel || 'Topic Subscribers' },
                 ].map(({ key, label }) => (
                   <button
                     key={key}
@@ -82,7 +83,9 @@ function Header({
                       activeView === key
                         ? key === 'prediction'
                           ? 'bg-indigo-600 text-white shadow'
-                          : 'bg-slate-500 text-white shadow'
+                          : key === 'topics'
+                            ? 'bg-teal-600 text-white shadow'
+                            : 'bg-slate-500 text-white shadow'
                         : 'text-slate-400 hover:text-slate-200'
                     }`}
                   >

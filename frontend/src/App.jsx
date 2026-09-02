@@ -3,6 +3,7 @@ import QueuePanel from './components/QueuePanel'
 import Header from './components/Header'
 import PublisherStatus from './components/PublisherStatus'
 import PredictionView from './components/PredictionView'
+import TopicExplorerView from './components/TopicExplorerView'
 import { CHART_ACCURACY_GAP_WINDOW, NQ_PREDICTION_CONSUMER } from './config'
 import { useSolaceDashboard } from './hooks/useSolaceDashboard'
 import { createSessionId } from './sessionId'
@@ -471,7 +472,14 @@ function App() {
     ],
   )
 
-  const { connected, connectionHint, publishCommand } = useSolaceDashboard({
+  const {
+    connected,
+    connectionHint,
+    publishCommand,
+    subscribeTopic,
+    unsubscribeTopic,
+    addRawMessageListener,
+  } = useSolaceDashboard({
     sessionId,
     selectedProfileId,
     onMessage: onDashboardMessage,
@@ -600,7 +608,7 @@ function App() {
             profile={profile}
           />
         </div>
-      ) : (
+      ) : activeView === 'prediction' ? (
         <PredictionView
           seriesKeys={chartSeriesKeys}
           uiPrediction={profile?.ui?.prediction}
@@ -610,6 +618,14 @@ function App() {
           latestPredictions={latestPredictions}
           publishedCountBySeries={sessionPublishedCountBySymbol}
           accuracyGapSamplesBySeries={accuracyGapSamplesBySeries}
+        />
+      ) : (
+        <TopicExplorerView
+          profile={profile}
+          connected={connected}
+          subscribeTopic={subscribeTopic}
+          unsubscribeTopic={unsubscribeTopic}
+          addRawMessageListener={addRawMessageListener}
         />
       )}
     </div>

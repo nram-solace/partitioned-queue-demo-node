@@ -14,7 +14,7 @@
   "branding": {
     "appTitle": "Drilling operations demo",
     "subtitle": "Solace PubSub+ queue types",
-    "documentTitle": "Queue demo - drilling"
+    "documentTitle": "Solace Queues/Topics Demo"
   },
   "queues": {
     "partitioned": "QDemoDrilling-PQ",
@@ -25,7 +25,8 @@
     "topicPrefix": "qdemo/ops/drilling/well",
     "partitionKeys": ["W4501", "W4512", "W4521", "W4533", "W4547", "W4560"],
     "partitionKeyField": "wellId",
-    "topicSuffixFromField": "wellId"
+    "topicSuffixFromField": "wellId",
+    "topicLevels": ["region", "state", "status"]
   },
   "labels": {
     "partitionAssignment": "Well"
@@ -95,6 +96,23 @@
       "valueFormat": "number",
       "helpTopic": "wellhead-pressure"
     },
-    "colorStrategy": "hashPartitionKey"
+    "colorStrategy": "hashPartitionKey",
+    "topicExplorer": {
+      "tabLabel": "Topic Subscribers",
+      "presets": [
+        { "id": "all", "label": "All events (all wells)", "filter": {} },
+        { "id": "permian", "label": "Events from Permian basin", "filter": { "region": "PERMIAN" } },
+        { "id": "texas-drilled", "label": "Drilled events in Texas", "filter": { "state": "TX", "status": "DRILLED" } },
+        {
+          "id": "exceptions",
+          "label": "All exceptions (all wells)",
+          "anyOf": [
+            { "status": "SHUT_IN" },
+            { "status": "PLUGGED" },
+            { "status": "ABANDONED" }
+          ]
+        }
+      ]
+    }
   }
 }

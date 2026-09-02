@@ -56,6 +56,30 @@ test('parse and validate profiles/drilling.json', () => {
   assert.equal(p.features.prediction.plugin, 'oilfield-ops-ema');
   assert.equal(p.messaging.partitionKeyField, 'wellId');
   assert.equal(p.ui.prediction.valueFormat, 'number');
+  assert.deepEqual(p.messaging.topicLevels, ['region', 'state', 'status']);
+});
+
+test('drilling topicForMessage inserts topicLevels between prefix and suffix', () => {
+  const p = validateDemoProfile(loadDemoProfile(drillingPath));
+  const topic = topicForMessage(p, {
+    wellId: 'W4501',
+    region: 'PERMIAN',
+    state: 'TX',
+    status: 'DRILLED',
+  });
+  assert.equal(topic, 'qdemo/ops/drilling/well/PERMIAN/TX/DRILLED/W4501');
+});
+
+test('topicLevels referencing an unknown field fails validation', () => {
+  const p = loadDemoProfile(drillingPath);
+  p.messaging.topicLevels = ['region', 'notAField'];
+  assert.throws(() => validateDemoProfile(p), /topicLevels references unknown message field/);
+});
+
+test('topicLevels overlapping topicSuffixFromField fails validation', () => {
+  const p = loadDemoProfile(drillingPath);
+  p.messaging.topicLevels = ['region', 'wellId'];
+  assert.throws(() => validateDemoProfile(p), /must not include messaging\.topicSuffixFromField/);
 });
 
 test('listDemoProfiles loads all packaged profiles with prediction', () => {

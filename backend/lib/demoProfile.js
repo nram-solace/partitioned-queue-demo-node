@@ -61,6 +61,20 @@ function validateDemoProfile(profile) {
   if (typeof m.topicSuffixFromField !== 'string' || !m.topicSuffixFromField.trim()) {
     throw new Error('Demo profile requires non-empty string: messaging.topicSuffixFromField');
   }
+  if (m.topicLevels !== undefined) {
+    if (!Array.isArray(m.topicLevels)) {
+      throw new Error('messaging.topicLevels must be an array when present');
+    }
+    if (!m.topicLevels.every((f) => typeof f === 'string' && f.trim())) {
+      throw new Error('messaging.topicLevels must be an array of non-empty strings');
+    }
+    if (new Set(m.topicLevels).size !== m.topicLevels.length) {
+      throw new Error('messaging.topicLevels must not contain duplicate field names');
+    }
+    if (m.topicLevels.includes(m.topicSuffixFromField)) {
+      throw new Error('messaging.topicLevels must not include messaging.topicSuffixFromField');
+    }
+  }
 
   if (!Array.isArray(profile.messageFields) || profile.messageFields.length === 0) {
     throw new Error('Demo profile requires non-empty array: messageFields');
@@ -140,6 +154,13 @@ function validateDemoProfile(profile) {
     throw new Error(
       `messaging.topicSuffixFromField "${m.topicSuffixFromField}" must match a messageFields name`,
     );
+  }
+  if (m.topicLevels !== undefined) {
+    for (const f of m.topicLevels) {
+      if (!fieldNames.has(f)) {
+        throw new Error(`messaging.topicLevels references unknown message field: ${f}`);
+      }
+    }
   }
   if (!fieldNames.has(m.partitionKeyField)) {
     throw new Error(
@@ -447,7 +468,15 @@ function topicForMessage(profile, message) {
   if (suffix === undefined || suffix === null) {
     throw new Error(`Message missing topic suffix field "${suffixField}"`);
   }
-  return `${profile.messaging.topicPrefix}/${suffix}`;
+  const levels = profile.messaging.topicLevels || [];
+  const levelParts = levels.map((field) => {
+    const value = message[field];
+    if (value === undefined || value === null) {
+      throw new Error(`Message missing topic level field "${field}"`);
+    }
+    return value;
+  });
+  return [profile.messaging.topicPrefix, ...levelParts, suffix].join('/');
 }
 
 let legacyEnvWarned = false;
