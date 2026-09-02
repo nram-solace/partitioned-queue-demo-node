@@ -1,10 +1,11 @@
-# Solace Queue Types — Interactive Demo
+# Solace Queues & Topics — Interactive Demo
 
-This is an **interactive demo** for Solace **PubSub+** queue types.
+This is an **interactive demo** for Solace **PubSub+** queue types and topic subscriptions.
 
 - A **publisher** emits stream of messages for a chosen scenario in a predefined **topic hierarchy**; **three** queues—a **partitioned**, a **non-exclusive**, and an **exclusive** queue—each subscribe to the same pattern, so every queue type sees the **same** traffic.
 - **Consumers** attach to each queue, process messages, and publish live dashboard events to **`solace/catalog/`** topics; the browser subscribes over **Solace Web Transport** (`:8008`). Number of consumers per queue is configurable.
 - The **dashboard** is a visual front end for that activity: you can see how each path delivers work, how load spreads, how ordering differs, and what happens when you **disconnect** or **reconnect** a consumer (**failover** on the exclusive one, **loadbalancing** on the non-exclusive queue, **rebalancing** on the partitioned queue).
+- Profiles that declare `ui.topicExplorer` (currently `drilling.json`) also get a **Topic Subscribers** tab, which contrasts the queue story with plain **direct topic subscriptions**: the browser subscribes straight to broker wildcard topics — no queue, no provisioning — and you can see how filters like "events from the Permian basin" or "all exceptions" fan out independently.
 
 ![Screenshot](./resources/screenshot.png)
 
@@ -18,9 +19,11 @@ This is an **interactive demo** for Solace **PubSub+** queue types.
 - retail: `profiles/retail.json` — fulfillment orders; **line total** prediction by store
 - airline-carrier: `profiles/airline-carrier.json` — flight status; **delay (minutes)** prediction partitioned by **carrier** (IATA codes)
 - airline-hub: `profiles/airline-hub.json` — same payload shape; **delay** prediction partitioned by **hub** (airport codes)
-- drilling: `profiles/drilling.json` — well lifecycle events; **wellhead pressure (psi)** prediction partitioned by **well id**
+- drilling: `profiles/drilling.json` — well lifecycle events; **wellhead pressure (psi)** prediction partitioned by **well id**; also the sample **Topic Subscribers** profile (see below)
 
 You can add more domains (energy, logistics, and so on) by copying those samples and staying within the rules enforced in `backend/lib/demoProfile.js`.
+
+Profiles may also declare `messaging.topicLevels` (extra message fields inserted into the topic between the prefix and the usual per-key suffix, e.g. `{prefix}/{region}/{state}/{status}/{wellId}`) and a matching `ui.topicExplorer` block (a `tabLabel` plus a list of named topic-filter **presets**, each either an exact-match `filter` or an `anyOf` list of filters). That's what powers the **Topic Subscribers** tab for a given profile — see `profiles/drilling.json` for a working example.
 
 Profiles with **`ui.prediction`** show a **Prediction** tab: charts compare **actual** values from the publisher with lightweight EMA+VWAP estimates on the **partitioned** and **non-exclusive** consumer paths. Finance uses per-symbol **price**; retail uses **line total** by store; airline profiles use **delay (min)** by carrier or hub; drilling uses **wellhead pressure (psi)** by well id. See [Finance profile and the Prediction UI](#finance-profile-and-the-prediction-ui) for behavior and env vars.
 
@@ -209,7 +212,7 @@ URL: **http://localhost:3000**.
 
 ![Screenshot2](./resources/screenshot2.png)
 
-**Header** — Solace connection indicator; primary title plus **profile subtitle** from `branding.appTitle` once **`solace/catalog/profiles`** (or initial **`state`** on the events topic) loads. If the profile sets `features.pricePrediction: true` (e.g. `profiles/finance.json`), tabs appear: **Message Flow** (consumer cards) and **Prediction** (price charts). The browser tab title follows `branding.documentTitle` when the profile loads.
+**Header** — Solace connection indicator; primary title plus **profile subtitle** from `branding.appTitle` once **`solace/catalog/profiles`** (or initial **`state`** on the events topic) loads. Tabs always include **Queue Consumers** (consumer cards); a **Prediction** tab appears when the profile configures `features.prediction`; a **Topic Subscribers** tab always appears, showing a "not configured" placeholder unless the profile declares `ui.topicExplorer` (currently only `drilling.json`). The browser tab title follows `branding.documentTitle` when the profile loads.
 
 **Publisher panel** — total published **events**, topic prefix (from profile or last publisher stats), and **Active** / **Inactive** based on whether **`publisherStats`** arrive on **`solace/catalog/stats/{profileId}/publisher`** (publisher process must be running for Active).
 
@@ -231,6 +234,13 @@ URL: **http://localhost:3000**.
 - Requires **`npm run publisher`** so actual prices and stats flow to the UI  
 - Charts **actual** publisher prices vs **partitioned-queue** and **non-exclusive** consumer-side predictions (NQ chart uses one canonical consumer index; keep backend **`NQ_PREDICTION_CONSUMER`** and frontend **`VITE_NQ_PREDICTION_CONSUMER`** aligned — see `demo.env.example`)
 
+**Topic Subscribers view** ([`frontend/src/components/TopicExplorerView.jsx`](frontend/src/components/TopicExplorerView.jsx); presets from `profiles/drilling.json`)
+
+- No queue involved — each preset card is its own **ad-hoc direct topic subscription**, made straight from the browser via the existing Solace session (`subscribeTopic`/`unsubscribeTopic` in `useSolaceDashboard.js`). Toggling a card on/off adds/removes that broker subscription live.
+- Each card shows the **resolved wildcard topic string** it subscribed to (e.g. `qdemo/ops/drilling/well/*/TX/DRILLED/>`), a live message count, and a rolling feed — so the filter isn't just described, it's visibly the thing doing the work.
+- Toggle more than one preset at once to see **fan-out**: a single published event that matches two active filters shows up in both cards independently, since each subscription gets its own copy.
+- Presets are declarative — each one in the profile's `ui.topicExplorer.presets` is either a `{ filter }` (all listed fields must match) or an `{ anyOf }` (any one filter in the list matches), compiled into real wildcard topic strings by [`frontend/src/topicFilters.js`](frontend/src/topicFilters.js).
+
 **Quick experiments**
 
 1. **Partitioned** — same partition key maps to one partition; disconnect a consumer and watch rebalancing.  
@@ -238,6 +248,7 @@ URL: **http://localhost:3000**.
 3. **Exclusive** — one active, others standby; fail over by disconnecting the active consumer.  
 4. **Rebalancing** — on the partitioned panel, disconnect a consumer, observe REBALANCING then BALANCED (~5s stabilization), then reconnect.  
 5. **Prediction** — with `finance.json`, switch to **Prediction** and compare PQ vs NQ prediction curves to the publisher’s actual prices.
+6. **Topic Subscribers** — with `drilling.json`, switch to **Topic Subscribers** and toggle on "Events from Permian basin" and "All exceptions (all wells)" together; a `SHUT_IN`/`PLUGGED`/`ABANDONED` event for a Permian well lands in both feeds at once.
 
 ---
 
@@ -245,14 +256,14 @@ URL: **http://localhost:3000**.
 
 ### Finance profile and the Prediction UI
 
-The default profile **`profiles/finance.json`** sets **`features.pricePrediction`: `true`**, which turns on a second dashboard mode beside the queue consumer cards:
+The default profile **`profiles/finance.json`** sets **`features.prediction`**, which turns on a second dashboard mode beside the queue consumer cards:
 
 | UI | What you see |
 |----|----------------|
-| **Message Flow** | Publisher strip + three queue panels + five consumer tiles per queue (same as other profiles). |
+| **Queue Consumers** | Publisher strip + three queue panels + five consumer tiles per queue (same as other profiles). |
 | **Prediction** | Header tabs switch to [`frontend/src/components/PredictionView.jsx`](frontend/src/components/PredictionView.jsx): **per-symbol** price charts with **Actual** (solid line, from **`publisherStats`** on the catalog stats topic), **PQ** (partitioned-queue consumer prediction), and **NQ** (non-exclusive prediction, dashed — one canonical consumer so the line is stable; set **`NQ_PREDICTION_CONSUMER`** in **`demo.env`**, default `1`). Charts include recency / “closeness” style readouts derived from recent prediction error. |
 
-**Retail** (`profiles/retail.json`) and profiles **without** `features.pricePrediction` only show **Message Flow** (no Prediction tab).
+**Retail** (`profiles/retail.json`) and profiles **without** `features.prediction` don't show a Prediction tab (**Queue Consumers** and **Topic Subscribers** are always available).
 
 ## Architecture at a glance
 
@@ -267,12 +278,16 @@ Three Queues (wildcard subscription covering profile topics — e.g. `{topicPref
     ├── {Profile}_NQ (Non-Exclusive Queue)
     └── {Profile}_EQ (Exclusive Queue)
     ↓
-15 Consumers (5 per queue type) — if finance + pricePrediction: prediction hints on solace/catalog/events/{profileId}
+15 Consumers (5 per queue type) — if profile has features.prediction: prediction hints on solace/catalog/events/{profileId}
     ↓
 Publisher → solace/catalog/stats/{profileId}/publisher (~1 Hz)
 Consumer  → solace/catalog/profiles + solace/catalog/events/{profileId}
     ↓
-React Dashboard (solclientjs Web Transport :8008) — Message Flow; optional Prediction tab (finance.json)
+React Dashboard (solclientjs Web Transport :8008)
+    ├── Queue Consumers tab (always)
+    ├── Prediction tab (profiles with features.prediction)
+    └── Topic Subscribers tab — browser subscribes directly to {topicPrefix}/... wildcards
+        from ui.topicExplorer.presets (drilling.json), bypassing the queues entirely
 ```
 
 ### What this demo illustrates
@@ -281,6 +296,7 @@ React Dashboard (solclientjs Web Transport :8008) — Message Flow; optional Pre
 - **Non-exclusive queue** — all consumers compete for messages in parallel; maximum throughput, no per-key ordering story.  
 - **Exclusive queue** — single active consumer, strict ordering across the queue, standby consumers for HA.  
 - **Finance Prediction UI** — with `profiles/finance.json`, the **Prediction** tab contrasts **publisher actual prices** with **streaming estimates** from partitioned-queue vs non-exclusive consumer paths (illustrates how delivery semantics affect a simple on-consumer price model).
+- **Topic Subscribers** — with `profiles/drilling.json`, contrasts the three queues above with plain **direct topic subscriptions**: no broker provisioning, any number of independent subscribers, each getting its own copy of only the events matching its wildcard filter (versus a queue's single competing-consumer copy).
 
 ### Understanding queue types
 
@@ -338,11 +354,13 @@ partitioned-queue-demo-node/
 │   ├── finance.json
 │   ├── retail.json
 │   ├── airline-carrier.json
-│   └── airline-hub.json
+│   ├── airline-hub.json
+│   └── drilling.json        # sample ui.topicExplorer (Topic Subscribers tab)
 ├── frontend/
 │   ├── src/
 │   │   ├── App.jsx
 │   │   ├── config.js    # generated from demo.env (npm run sync-config)
+│   │   ├── topicFilters.js  # ui.topicExplorer preset → wildcard topic string / message match
 │   ├── public/
 │   │   └── config.js    # window.__DEMO_CONFIG__ (auto-generated)
 │   │   ├── hooks/useSolaceDashboard.js
@@ -352,7 +370,8 @@ partitioned-queue-demo-node/
 │   │       ├── Header.jsx
 │   │       ├── PredictionView.jsx
 │   │       ├── PublisherStatus.jsx
-│   │       └── QueuePanel.jsx
+│   │       ├── QueuePanel.jsx
+│   │       └── TopicExplorerView.jsx
 │   └── package.json
 ├── package.json
 └── README.md
