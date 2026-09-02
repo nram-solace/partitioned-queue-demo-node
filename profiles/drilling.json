@@ -1,0 +1,100 @@
+{
+  "schemaVersion": 1,
+  "id": "drilling",
+  "features": {
+    "prediction": {
+      "plugin": "oilfield-ops-ema",
+      "observationFields": {
+        "seriesKey": "wellId",
+        "value": "wellheadPressure",
+        "weight": "chokeSize"
+      }
+    }
+  },
+  "branding": {
+    "appTitle": "Drilling operations demo",
+    "subtitle": "Solace PubSub+ queue types",
+    "documentTitle": "Queue demo - drilling"
+  },
+  "queues": {
+    "partitioned": "QDemoDrilling-PQ",
+    "nonExclusive": "QDemoDrilling-NQ",
+    "exclusive": "QDemoDrilling-EQ"
+  },
+  "messaging": {
+    "topicPrefix": "qdemo/ops/drilling/well",
+    "partitionKeys": ["W4501", "W4512", "W4521", "W4533", "W4547", "W4560"],
+    "partitionKeyField": "wellId",
+    "topicSuffixFromField": "wellId"
+  },
+  "labels": {
+    "partitionAssignment": "Well"
+  },
+  "messageFields": [
+    { "name": "eventId", "type": "id", "prefix": "EVT-", "width": 8 },
+    { "name": "wellId", "type": "partitionKey" },
+    {
+      "name": "status",
+      "type": "enum",
+      "values": [
+        "PERMITTED",
+        "SPUDDED",
+        "DRILLED",
+        "PERFORATED",
+        "FRACTURED",
+        "CHOKE_ADJUSTED",
+        "SHUT_IN",
+        "PLUGGED",
+        "ABANDONED"
+      ]
+    },
+    { "name": "region", "type": "enum", "values": ["PERMIAN", "BAKKEN", "EAGLE_FORD", "MARCELLUS", "ANADARKO"] },
+    { "name": "state", "type": "enum", "values": ["TX", "NM", "ND", "PA", "OK"] },
+    { "name": "chokeSize", "type": "int", "min": 8, "max": 64 },
+    {
+      "name": "wellheadPressure",
+      "type": "float",
+      "baselineByPartitionKey": {
+        "W4501": 2450.0,
+        "W4512": 3100.0,
+        "W4521": 2800.0,
+        "W4533": 1950.0,
+        "W4547": 3400.0,
+        "W4560": 2650.0
+      },
+      "volatilityByPartitionKey": {
+        "W4501": 0.006,
+        "W4512": 0.008,
+        "W4521": 0.005,
+        "W4533": 0.009,
+        "W4547": 0.007,
+        "W4560": 0.006
+      },
+      "jitter": 20
+    },
+    { "name": "timestamp", "type": "isoTimestamp" },
+    {
+      "name": "rigCrew",
+      "type": "enum",
+      "values": ["crew_01", "crew_02", "crew_03", "crew_04"]
+    },
+    { "name": "afe", "type": "template", "pattern": "AFE-{n:5}" }
+  ],
+  "ui": {
+    "displayFields": [
+      { "field": "wellId", "label": "Well", "format": "text", "prominent": true },
+      { "field": "status", "label": "Status", "format": "badge" },
+      { "field": "wellheadPressure", "label": "Pressure (psi)", "format": "number" },
+      { "field": "chokeSize", "label": "Choke (64ths)", "format": "number" },
+      { "field": "region", "label": "Region", "format": "text" }
+    ],
+    "prediction": {
+      "tabLabel": "Wellhead Pressure Prediction",
+      "seriesLabel": "Well",
+      "valueLabel": "Pressure (psi)",
+      "valueFormat": "number",
+      "helpTopic": "wellhead-pressure"
+    },
+    "colorStrategy": "hashPartitionKey"
+  }
+}

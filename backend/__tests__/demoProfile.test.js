@@ -15,6 +15,7 @@ const financePath = path.join(__dirname, '../../profiles/finance.json');
 const retailPath = path.join(__dirname, '../../profiles/retail.json');
 const airlineCarrierPath = path.join(__dirname, '../../profiles/airline-carrier.json');
 const airlineHubPath = path.join(__dirname, '../../profiles/airline-hub.json');
+const drillingPath = path.join(__dirname, '../../profiles/drilling.json');
 
 test('parse and validate profiles/retail.json', () => {
   const p = loadDemoProfile(retailPath);
@@ -48,12 +49,21 @@ test('parse and validate profiles/airline-hub.json', () => {
   assert.equal(p.messaging.partitionKeyField, 'hub');
 });
 
+test('parse and validate profiles/drilling.json', () => {
+  const p = loadDemoProfile(drillingPath);
+  validateDemoProfile(p);
+  assert.equal(p.id, 'drilling');
+  assert.equal(p.features.prediction.plugin, 'oilfield-ops-ema');
+  assert.equal(p.messaging.partitionKeyField, 'wellId');
+  assert.equal(p.ui.prediction.valueFormat, 'number');
+});
+
 test('listDemoProfiles loads all packaged profiles with prediction', () => {
   const profiles = listDemoProfiles(path.join(__dirname, '../../profiles'));
-  assert.equal(profiles.length, 4);
+  assert.equal(profiles.length, 5);
   assert.deepEqual(
     profiles.map((p) => p.id),
-    ['airline-carrier', 'airline-hub', 'finance', 'retail'],
+    ['airline-carrier', 'airline-hub', 'drilling', 'finance', 'retail'],
   );
   for (const p of profiles) {
     assert.ok(p.features.prediction.plugin);
