@@ -43,3 +43,6 @@ services:
   frontend:
     environment:
       SOLACE_PUBLIC_URL: ${SOLACE_PUBLIC_URL:-ws://localhost:8008}
+      SOLACE_VPN: default
+      SOLACE_USERNAME: default
+      SOLACE_PASSWORD: default
