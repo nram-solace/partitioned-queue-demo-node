@@ -57,3 +57,40 @@ function messageMatchesFilter(message, filter) {
 export function presetMatches(message, preset) {
   return filtersOf(preset).some((f) => messageMatchesFilter(message, f))
 }
+
+function toPlaceholder(field) {
+  return field.replace(/([a-z0-9])([A-Z])/g, '$1-$2').toLowerCase()
+}
+
+/**
+ * The full published-topic pattern for a profile, e.g.
+ * "qdemo/ops/drilling/well/<region>/<state>/<status>/<well-id>" — the fixed
+ * topicPrefix followed by each messaging.topicLevels field, then the
+ * per-key topicSuffixFromField.
+ */
+export function buildPublishedTopicPattern(profile) {
+  const { topicPrefix, topicLevels = [], topicSuffixFromField } = profile?.messaging || {}
+  if (!topicPrefix) return ''
+  const fields = [...topicLevels, topicSuffixFromField].filter(Boolean)
+  return [topicPrefix, ...fields.map((f) => `<${toPlaceholder(f)}>`)].join('/')
+}
+
+function describeField(profile, fieldName, isSuffixField) {
+  const displayField = (profile?.ui?.displayFields || []).find((f) => f.field === fieldName)
+  const label = displayField?.label || fieldName[0].toUpperCase() + fieldName.slice(1)
+  const suffix = isSuffixField ? ' (partition key)' : ''
+  return `${toPlaceholder(fieldName)} = ${label}${suffix}`
+}
+
+/**
+ * One human-readable line per field in the published-topic pattern, in
+ * topic order (messaging.topicLevels, then topicSuffixFromField) — for
+ * example ["region = Region", "well-id = Well (partition key)"]. Labels come
+ * from ui.displayFields where the profile declares one, since messageFields
+ * (enum values etc.) is intentionally left off the wire profile.
+ */
+export function describePublishedTopicFields(profile) {
+  const { topicLevels = [], topicSuffixFromField } = profile?.messaging || {}
+  const fields = [...topicLevels, topicSuffixFromField].filter(Boolean)
+  return fields.map((f) => describeField(profile, f, f === topicSuffixFromField))
+}

@@ -1,16 +1,23 @@
-function PublisherStatus({ totalMessages, topicPrefix, topicName, isLive }) {
+import { buildPublishedTopicPattern, describePublishedTopicFields } from '../topicFilters'
+
+function PublisherStatus({ totalMessages, profile, topicName, isLive }) {
   const n = totalMessages || 0
   const eventsPart = `${n.toLocaleString()} ${n === 1 ? 'event' : 'events'}`
-  const displayPrefix =
-    topicPrefix && String(topicPrefix).trim()
-      ? String(topicPrefix).trim()
-      : topicName && String(topicName).trim()
-        ? String(topicName)
-            .trim()
-            .replace(/\/>\s*$/, '')
-            .replace(/>\s*$/, '')
-        : '…'
-  const topicTooltip = topicName && String(topicName).trim() ? String(topicName).trim() : undefined
+  const pattern = profile ? buildPublishedTopicPattern(profile) : ''
+  const displayTopic =
+    pattern ||
+    (topicName && String(topicName).trim()
+      ? String(topicName)
+          .trim()
+          .replace(/\/>\s*$/, '')
+          .replace(/>\s*$/, '')
+      : '…')
+  const fieldLines = profile ? describePublishedTopicFields(profile) : []
+  const topicTooltip = fieldLines.length
+    ? fieldLines.join('\n')
+    : topicName && String(topicName).trim()
+      ? String(topicName).trim()
+      : undefined
 
   return (
     <div
@@ -34,8 +41,8 @@ function PublisherStatus({ totalMessages, topicPrefix, topicName, isLive }) {
           className="min-w-0 flex-1 text-center text-base sm:text-lg px-2"
           title={topicTooltip ? `Publisher topic pattern: ${topicTooltip}` : undefined}
         >
-          <span className="text-slate-400 font-medium">Topic Prefix:</span>{' '}
-          <span className="font-mono text-slate-100 break-all">{displayPrefix}</span>
+          <span className="text-slate-400 font-medium">Published Topic:</span>{' '}
+          <span className="font-mono text-slate-100 break-all">{displayTopic}</span>
         </div>
         <div className="shrink-0 whitespace-nowrap text-right">
           <span className="text-slate-400 font-medium">Status:</span>{' '}

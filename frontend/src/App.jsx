@@ -572,7 +572,7 @@ function App() {
         <div className="container mx-auto px-4 py-6 space-y-6">
           <PublisherStatus
             totalMessages={sessionPublishedCount}
-            topicPrefix={profile?.messaging?.topicPrefix}
+            profile={profile}
             topicName={publisherStats.topicName || topicFallback}
             isLive={publisherStatsLive}
           />
