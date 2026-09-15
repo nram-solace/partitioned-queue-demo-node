@@ -25,6 +25,18 @@ You can add more domains (energy, logistics, and so on) by copying those samples
 
 Profiles may also declare `messaging.topicLevels` (extra message fields inserted into the topic between the prefix and the usual per-key suffix, e.g. `{prefix}/{region}/{state}/{status}/{wellId}`) and a matching `ui.topicExplorer` block (a `tabLabel` plus a list of named topic-filter **presets**, each either an exact-match `filter` or an `anyOf` list of filters). That's what powers the **Topic Subscribers** tab for a given profile — see `profiles/drilling.json` for a working example.
 
+**Published Topic:** `qdemo/ops/drilling/well/<region>/<state>/<status>/<well-id>`
+
+| Field | Description |
+|-------|-------------|
+| `qdemo/ops/drilling/well` | Fixed **topic prefix** (`messaging.topicPrefix` in the profile) |
+| `<region>` | Drilling basin/region (`region` field) — e.g. `PERMIAN`, `BAKKEN`, `EAGLE_FORD`, `MARCELLUS`, `ANADARKO` |
+| `<state>` | U.S. state code (`state` field) — e.g. `TX`, `NM`, `ND`, `PA`, `OK` |
+| `<status>` | Well lifecycle status (`status` field) — e.g. `PERMITTED`, `SPUDDED`, `DRILLED`, `PERFORATED`, `FRACTURED`, `CHOKE_ADJUSTED`, `SHUT_IN`, `PLUGGED`, `ABANDONED` |
+| `<well-id>` | Well identifier and **partition key** (`wellId` field, `messaging.topicSuffixFromField`) — e.g. `W4501` |
+
+`region`, `state`, and `status` come from `messaging.topicLevels` (in that order); `<well-id>` is the per-key suffix. Example resolved topic: `qdemo/ops/drilling/well/PERMIAN/TX/DRILLED/W4501`.
+
 Profiles with **`ui.prediction`** show a **Prediction** tab: charts compare **actual** values from the publisher with lightweight EMA+VWAP estimates on the **partitioned** and **non-exclusive** consumer paths. Finance uses per-symbol **price**; retail uses **line total** by store; airline profiles use **delay (min)** by carrier or hub; drilling uses **wellhead pressure (psi)** by well id. See [Finance profile and the Prediction UI](#finance-profile-and-the-prediction-ui) for behavior and env vars.
 
 ![Screenshot](./resources/screenshot-pred.png)
